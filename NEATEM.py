@@ -1,5 +1,8 @@
 from __future__ import print_function
 
+import sys
+sys.path.append("~/Documents/github/NEAT-RL/NEAT-EM")
+
 import multiprocessing
 import os
 import pickle
@@ -12,7 +15,7 @@ import gym
 import gym.wrappers as wrappers
 import configparser
 import visualize
-from NEATEMAgent import NeatEMAgent
+from NEATAgent.NeatEMAgent import NeatEMAgent
 import numpy as np
 import heapq
 from datetime import datetime
@@ -26,10 +29,10 @@ class StateTransition(object):
         self.end_state = end_state
 
     def __hash__(self):
-        return hash((self.start_state, self.end_state))
+        return hash(str(np.concatenate((self.start_state, self.end_state))))
 
     def __eq__(self, other):
-        return self.start_state == other.state and self.end_state == other.new_state
+        return np.array_equal(self.start_state, other.start_state) and np.array_equal(self.end_state, other.end_state)
 
     def get_start_state(self):
         return self.start_state
@@ -44,7 +47,7 @@ class StateTransition(object):
         return self.reward
 
     def get_tuple(self):
-        return (self.start_state)
+        return self.start_state, self.action, self.reward, self.end_state
 
 
 class NeatEM(object):
@@ -69,8 +72,10 @@ class NeatEM(object):
         :param num_trajectories: 
         :return: 
         '''
-        max_steps = props.getint('initialisation', 'max_steps')
+        logger.debug("Initialising trajectories")
+        tstart = datetime.now()
 
+        max_steps = props.getint('initialisation', 'max_steps')
         for i in range(num_trajectories):
             trajectory = []
             state = env.reset()
@@ -93,6 +98,7 @@ class NeatEM(object):
 
             # we have to insert timestamp as second entry so that we can order trajectories with the same reward count
             heapq.heappush(self.trajectories, (-reward_count, datetime.now(), trajectory))
+        logger.debug("Finished: Creating trajectories. Time taken: %f", (datetime.now() - tstart).total_seconds())
 
     def execute_algorithm(self, generations):
         self.population.run(self.fitness_function, generations)
@@ -106,21 +112,26 @@ class NeatEM(object):
         :return: 
         '''
 
+        logger.debug("Initialising neural networks")
         nets = []
         for genome_id, genome in genomes:
             # reinitialise the agents
             network = neat.nn.FeedForwardNetwork.create(genome, config)
-            neatNetwork = NeatEMAgent(network, props.getint('neuralnet', 'dimension'))
-
-            nets.append((genome, neatNetwork))
+            neat_network = NeatEMAgent(network,
+                                       props.getint('neuralnet', 'dimension'),
+                                       props.getint('policy', 'num_actions'))
+            nets.append((genome, neat_network))
             genome.fitness = 0
 
-
+        logger.debug("Finished: Initialising neural networks")
         # select K random agents to perform rollout
 
         num_new_trajectories = props.getint('evaluation', 'new_trajectories')
+
+        logger.debug("Generating %d new trajectories", num_new_trajectories)
+
         max_steps = props.getint('initialisation', 'max_steps')
-        rand_policy = random.randint(0, len(nets)-1)
+        rand_policy = random.randint(0, len(nets) - 1)
         for i in range(num_new_trajectories):
             genome, agent = nets[rand_policy]
             # perform a rollout
@@ -151,30 +162,27 @@ class NeatEM(object):
             rand_policy = new_policy
 
         # strip weak trajectories from trajectory_set and add state transitions to set state_transitions
-        self.trajectories = self.trajectories[:10]
+        self.trajectories = self.trajectories[:props.getint('initialisation', 'trajectory_size')]
         for i in range(len(self.trajectories)):
             _, __, trajectory = self.trajectories[i]
             self.state_transitions = self.state_transitions | set(trajectory)
 
+        logger.debug("Finished: Generating %d new trajectories", num_new_trajectories)
+
         # For each individual in the population
+        tstart = datetime.now()
         for genome, net in nets:
-            random_trajectory = random.randint(0, len(self.trajectories) - 1)
-            # 20 = number of state transitions we use for experience replay
-            for i in range(20):
-                _, _, state_transition = self.trajectories[random_trajectory]
-                random_state_transition = random.randint(0, len(state_transition) - 1)
-                state, action, reward, next_state = state_transition[random_state_transition]
+            experience_replay = props.getint('evaluation', 'experience_replay')
+            random_state_transitions = random.sample(self.state_transitions, experience_replay)
+            for i in range(experience_replay):
+                state_transition = random_state_transitions[i]
                 # update TD error and value function
-                net.update_value_function(state, next_state, reward)
-
-                new_random_trajectory = random.randint(0, len(self.trajectories) - 1)
-                while new_trajectory == new_random_trajectory:
-                    new_random_trajectory = random.randint(0, len(self.trajectories) - 1)
-
+                net.update_value_function(state_transition.get_start_state(), state_transition.get_end_state(),
+                                          state_transition.get_reward())
 
             # update policy parameter
             # we only update the policy parameter if it was used for the action
-            net.update_policy_function(self.trajectories)
+            net.update_policy_function(self.state_transitions)
 
             # now assign fitness to each individual/genome
             # fitness is the log prob of following the best trajectory
@@ -182,13 +190,15 @@ class NeatEM(object):
             best_trajectory = self.trajectories[0]
             best_trajectory_prob = 1
             total_reward, _, state_transitions = best_trajectory
-            for j, (state, action, reward, new_state) in enumerate(state_transitions):
+            for j, state_transition in enumerate(state_transitions):
                 # calculcate probability of the action probability where policy action = action
-                state_features = agent.get_network().activate(state)
+                state_features = agent.get_network().activate(state_transition.get_start_state())
                 _, actions_distribution = agent.get_policy().get_action(state_features)
-                best_trajectory_prob *= actions_distribution[action]
+                best_trajectory_prob *= actions_distribution[state_transition.get_action()]
 
             genome.fitness = np.log(best_trajectory_prob)
+
+        logger.debug("Completed Generation. Time taken: %f", (datetime.now() - tstart).total_seconds())
 
 
 def save_best_genomes(best_genomes, has_won):
@@ -216,10 +226,10 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     gym.undo_logger_setup()
-    logging.basicConfig(filename='debug.log', level=logging.DEBUG)
+    logging.basicConfig(filename='log/debug-'+str(datetime.now())+'.log', level=logging.DEBUG)
     logger = logging.getLogger()
     logging.Formatter('[%(asctime)s] %(message)s')
-    env = gym.make(args.env_id)
+    env = gym.make(args.env_id).env
 
     logger.debug("action space: %s", env.action_space)
     logger.debug("observation space: %s", env.observation_space)
@@ -228,14 +238,14 @@ if __name__ == '__main__':
     # directory, including one with existing data -- all monitor files
     # will be namespaced). You can also dump to a tempdir if you'd
     # like: tempfile.mkdtemp().
-    outdir = '/tmp/neat-em-data/' + str(datetime.now())
-    env = wrappers.Monitor(env, directory=outdir, force=True)
+    # outdir = '/tmp/neat-em-data/' + str(datetime.now())
+    # env = wrappers.Monitor(env, directory=outdir, force=True)
 
     # load properties
+    logger.debug("Loading Properties File")
     props = configparser.ConfigParser()
     props.read('neatem_properties.ini')
-
-    # run the algorithm
+    logger.debug("Finished: Loading Properties File")
 
     # Load the config file, which is assumed to live in
     # the same directory as this script.

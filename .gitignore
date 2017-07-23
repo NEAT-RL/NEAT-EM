@@ -1,3 +1,9 @@
+# log files
+log/
+
+# neat checkpoints
+neat-checkpoint*
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
