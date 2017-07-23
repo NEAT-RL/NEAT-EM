@@ -188,15 +188,16 @@ class NeatEM(object):
             # fitness is the log prob of following the best trajectory
             # I need the get action to return me the probabilities of the actions rather than a numerical action
             best_trajectory = self.trajectories[0]
-            best_trajectory_prob = 1
+            best_trajectory_prob = 0
             total_reward, _, state_transitions = best_trajectory
             for j, state_transition in enumerate(state_transitions):
-                # calculcate probability of the action probability where policy action = action
+                # calculate probability of the action probability where policy action = action
                 state_features = agent.get_network().activate(state_transition.get_start_state())
                 _, actions_distribution = agent.get_policy().get_action(state_features)
-                best_trajectory_prob *= actions_distribution[state_transition.get_action()]
+                best_trajectory_prob += np.log(actions_distribution[state_transition.get_action()])
 
-            genome.fitness = np.log(best_trajectory_prob)
+            fitness = best_trajectory_prob
+            genome.fitness = fitness
 
         logger.debug("Completed Generation. Time taken: %f", (datetime.now() - tstart).total_seconds())
 

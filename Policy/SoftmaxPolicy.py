@@ -7,6 +7,7 @@ from datetime import datetime
 logging.basicConfig(filename='log/policy-debug-' + str(datetime.now()) + '.log', level=logging.DEBUG)
 logger = logging.getLogger()
 
+
 class SoftmaxPolicy(object):
     def __init__(self, dimension, num_actions):
         self.dimension = dimension
@@ -23,7 +24,7 @@ class SoftmaxPolicy(object):
          - Maximising log likelihood etc
         :return: 
         """
-        self.parameters = np.zeros((self.num_actions, self.dimension), dtype=float)
+        self.parameters = np.random.uniform(low=-10, high=10, size=(self.num_actions, self.dimension))
 
     def get_num_actions(self):
         return self.num_actions
