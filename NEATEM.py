@@ -151,6 +151,15 @@ class NeatEM(object):
                     terminal_reached = True
                 steps += 1
 
+            '''
+            In MountainCar problem, the total reward is always negative. The lower the number the worse the trajectory
+            Heapq keeps smallest values in the first position. 
+            Whereas we want to keep the largest values in the first position as it makes stripping of trajectories efficient
+            
+            So we will invert the total reward count. 
+            E.g. if T1 = -500 and T2 = -200. T2 is better than T2. In normal heapq this would be [T1, T2]
+            We will invert it to T1_inv = 500, T2_inv = 200. Our inverted heapq would be [T2_inv, T1_inv]
+            '''
             heapq.heappush(self.trajectories, (-reward_count, datetime.now(), new_trajectory))
 
             new_policy = random.randint(0, len(nets) - 1)
@@ -160,6 +169,9 @@ class NeatEM(object):
 
         # strip weak trajectories from trajectory_set and add state transitions to set state_transitions
         self.trajectories = self.trajectories[:props.getint('initialisation', 'trajectory_size')]
+        logger.debug("Best Trajectory reward: %f", -self.trajectories[0][0])
+        logger.debug("Worst Trajectory reward: %f", -self.trajectories[len(self.trajectories) - 1][0])
+
         for i in range(len(self.trajectories)):
             _, __, trajectory = self.trajectories[i]
             self.state_transitions = self.state_transitions | set(trajectory)
