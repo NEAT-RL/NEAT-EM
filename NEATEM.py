@@ -1,8 +1,5 @@
 from __future__ import print_function
 
-import sys
-sys.path.append("~/Documents/github/NEAT-RL/NEAT-EM")
-
 import multiprocessing
 import os
 import pickle
@@ -15,7 +12,7 @@ import gym
 import gym.wrappers as wrappers
 import configparser
 import visualize
-from NEATAgent.NeatEMAgent import NeatEMAgent
+from NEATAgent.NEATEMAgent import NeatEMAgent
 import numpy as np
 import heapq
 from datetime import datetime

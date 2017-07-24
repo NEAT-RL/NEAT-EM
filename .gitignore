@@ -1,5 +1,6 @@
 # log files
 log/
+results/
 
 # neat checkpoints
 neat-checkpoint*
