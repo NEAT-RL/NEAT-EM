@@ -12,7 +12,7 @@ import gym
 import gym.wrappers as wrappers
 import configparser
 import visualize
-from NEATAgent.NEATEMAgent import NeatEMAgent
+from NEATAgent.NeatEMAgent import NeatEMAgent
 import numpy as np
 import heapq
 from datetime import datetime
@@ -59,7 +59,6 @@ class NeatEM(object):
         self.population = pop
         self.pool = multiprocessing.Pool()
         self.trajectories = []
-        self.state_transitions = set()
         self.initialise_trajectories(props.getint('initialisation', 'trajectory_size'))
 
     def initialise_trajectories(self, num_trajectories):
@@ -85,7 +84,6 @@ class NeatEM(object):
                 next_state, reward, done, info = env.step(action)
                 state_transition = StateTransition(state, action, reward, next_state)
                 # insert state transition to the trajectory
-                self.state_transitions.add(state_transition)
                 trajectory.append(state_transition)
                 reward_count += reward
                 state = next_state
@@ -121,6 +119,46 @@ class NeatEM(object):
             genome.fitness = 0
 
         logger.debug("Finished: Initialising neural networks")
+
+        # For each individual in the population
+        '''
+        Collect a set of trajectories from the trajectories
+        '''
+        state_transitions = set()
+        for i in range(len(self.trajectories)):
+            _, __, trajectory = self.trajectories[i]
+            state_transitions = state_transitions | set(trajectory)
+
+        tstart = datetime.now()
+        for genome, net in nets:
+            experience_replay = props.getint('evaluation', 'experience_replay')
+            random_state_transitions = random.sample(state_transitions, experience_replay)
+            for i in range(experience_replay):
+                state_transition = random_state_transitions[i]
+                # update TD error and value function
+                net.update_value_function(state_transition.get_start_state(), state_transition.get_end_state(),
+                                          state_transition.get_reward())
+
+            # update policy parameter
+            # we only update the policy parameter if it was used for the action
+            net.update_policy_function(state_transitions)
+
+            # now assign fitness to each individual/genome
+            # fitness is the log prob of following the best trajectory
+            # I need the get action to return me the probabilities of the actions rather than a numerical action
+            best_trajectory = self.trajectories[0]
+            best_trajectory_prob = 0
+            total_reward, _, trajectory_state_transitions = best_trajectory
+            for j, state_transition in enumerate(trajectory_state_transitions):
+                # calculate probability of the action probability where policy action = action
+                state_features = net.get_network().activate(state_transition.get_start_state())
+                _, actions_distribution = net.get_policy().get_action(state_features)
+                best_trajectory_prob += np.log(actions_distribution[state_transition.get_action()])
+
+            fitness = best_trajectory_prob
+            genome.fitness = fitness
+
+
         # select K random agents to perform rollout
 
         num_new_trajectories = props.getint('evaluation', 'new_trajectories')
@@ -155,7 +193,7 @@ class NeatEM(object):
             In MountainCar problem, the total reward is always negative. The lower the number the worse the trajectory
             Heapq keeps smallest values in the first position. 
             Whereas we want to keep the largest values in the first position as it makes stripping of trajectories efficient
-            
+
             So we will invert the total reward count. 
             E.g. if T1 = -500 and T2 = -200. T2 is better than T2. In normal heapq this would be [T1, T2]
             We will invert it to T1_inv = 500, T2_inv = 200. Our inverted heapq would be [T2_inv, T1_inv]
@@ -177,37 +215,6 @@ class NeatEM(object):
             self.state_transitions = self.state_transitions | set(trajectory)
 
         logger.debug("Finished: Generating %d new trajectories", num_new_trajectories)
-
-        # For each individual in the population
-        tstart = datetime.now()
-        for genome, net in nets:
-            experience_replay = props.getint('evaluation', 'experience_replay')
-            random_state_transitions = random.sample(self.state_transitions, experience_replay)
-            for i in range(experience_replay):
-                state_transition = random_state_transitions[i]
-                # update TD error and value function
-                net.update_value_function(state_transition.get_start_state(), state_transition.get_end_state(),
-                                          state_transition.get_reward())
-
-            # update policy parameter
-            # we only update the policy parameter if it was used for the action
-            net.update_policy_function(self.state_transitions)
-
-            # now assign fitness to each individual/genome
-            # fitness is the log prob of following the best trajectory
-            # I need the get action to return me the probabilities of the actions rather than a numerical action
-            best_trajectory = self.trajectories[0]
-            best_trajectory_prob = 0
-            total_reward, _, state_transitions = best_trajectory
-            for j, state_transition in enumerate(state_transitions):
-                # calculate probability of the action probability where policy action = action
-                state_features = agent.get_network().activate(state_transition.get_start_state())
-                _, actions_distribution = agent.get_policy().get_action(state_features)
-                best_trajectory_prob += np.log(actions_distribution[state_transition.get_action()])
-
-            fitness = best_trajectory_prob
-            genome.fitness = fitness
-
         logger.debug("Completed Generation. Time taken: %f", (datetime.now() - tstart).total_seconds())
 
 
