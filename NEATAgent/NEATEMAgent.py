@@ -48,7 +48,7 @@ class NeatEMAgent(object):
         '''
         # Update the policy parameters for the actions that are taken
 
-        # Create a delta vector of size # actions where each element is a tuple (component1 and component 2)
+        # Create a delta vector of size # actions where each element is a delta policy object
         delta = np.array([DeltaPolicy() for _ in range(self.policy.get_num_actions())])
 
         for j, state_transition in enumerate(state_transitions):
@@ -64,11 +64,12 @@ class NeatEMAgent(object):
 
             component2 = np.dot((1 - action_prob) * td_error, phi)
 
+            # we only update the policy parameter that was used to perform the action
             delta[state_transition.get_action()].add(component1, component2)
 
         for i in range(len(delta)):
             delta[i].component1 = delta[i].component1 / delta[i].state_transition_count
-            delta[i].component2 = np.dot(2 / delta[i].state_transition_count, delta[i].component2)
+            delta[i].component2 = np.dot(2.0 / delta[i].state_transition_count, delta[i].component2)
             delta[i].calculate_delta()
 
         self.policy.update_parameters(delta) # delta is a vector of size (num of actions) and each element is a vector of policy parameter
@@ -80,12 +81,12 @@ class DeltaPolicy(object):
         self.component1 = 0
         self.component2 = 0
         self.delta = 0
-        self.state_transition_count = 0
+        self.state_transition_count = 0.0
 
     def add(self, component1, component2):
         self.component1 += component1
         self.component2 += component2
-        self.state_transition_count += 1
+        self.state_transition_count += 1.0
 
     def calculate_delta(self):
         self.delta = np.dot(self.component1, self.component2)

@@ -24,7 +24,7 @@ class SoftmaxPolicy(object):
          - Maximising log likelihood etc
         :return: 
         """
-        self.parameters = np.random.uniform(low=-10, high=10, size=(self.num_actions, self.dimension))
+        self.parameters = np.random.uniform(low=-1, high=1, size=(self.num_actions, self.dimension))
 
     def get_num_actions(self):
         return self.num_actions
@@ -64,14 +64,22 @@ class SoftmaxPolicy(object):
         return chosen_policy_index, softmax
 
     def update_parameters(self, delta):
+        """
+        Delta is an array where each element is delta for a policy parameter.
+        Note: Number of policy parameters = number of actions.
+        Each delta object contains a delta of the policy parameter.
+        :param delta: 
+        :return: 
+        """
         for i, parameter in enumerate(self.parameters):
             capped_value = False
+            delta_vector = delta[i]
             for j, param in enumerate(parameter):
-                new_value = max(min(param + delta[i].delta[j], 10), -10)
+                new_value = max(min(param + delta_vector.delta[j], 10), -10)
                 if math.fabs(new_value) == 10:
-                    logger.debug("Capped parameter value from %f, to: %d", param + delta[i].delta[j], new_value)
+                    logger.debug("Capped parameter value from %f, to: %d", param + delta_vector.delta[j], new_value)
                     capped_value = True
-                parameter[j] = max(min(param + delta[i].delta[j], 10), -10)
+                parameter[j] = new_value
 
             if capped_value:
                 logger.debug("Policy Parameter was capped: %s", parameter)
