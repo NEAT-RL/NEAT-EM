@@ -169,9 +169,10 @@ class NeatEM(object):
         logger.debug("Generating %d new trajectories", num_new_trajectories)
 
         max_steps = props.getint('initialisation', 'max_steps')
-        rand_policy = random.randint(0, len(nets) - 1)
+        nets_sorted = sorted(nets, key=lambda x: x[0].fitness, reverse=True) # could replace this with an in-place sort
+
         for i in range(num_new_trajectories):
-            genome, agent = nets[rand_policy]
+            genome, agent = nets_sorted[i]
             # perform a rollout
             state = env.reset()
             terminal_reached = False
@@ -198,11 +199,6 @@ class NeatEM(object):
             '''
             heapq.heappush(self.trajectories, (reward_count, datetime.now(), new_trajectory))
 
-            new_policy = random.randint(0, len(nets) - 1)
-            while rand_policy == new_policy:
-                new_policy = random.randint(0, len(self.trajectories) - 1)
-            rand_policy = new_policy
-
         # strip weak trajectories from trajectory_set and add state transitions to set state_transitions
         self.trajectories = self.trajectories[
                             len(self.trajectories) - props.getint('initialisation', 'trajectory_size'):]
@@ -211,11 +207,11 @@ class NeatEM(object):
 
 
         # save the best individual's genome
-        genome, net = max(nets, key=lambda x: x[0].fitness)
+        genome, net = nets_sorted[0]
         logger.debug("Best genome: %s", genome)
         logger.debug("Best genome fitness: %f", genome.fitness)
 
-        genome_worst, net = min(nets, key=lambda x: x[0].fitness)
+        genome_worst, net = nets_sorted[len(nets_sorted) - 1]
         logger.debug("Worst genome fitness: %f", genome_worst.fitness)
 
         # save genome
