@@ -60,6 +60,7 @@ class NeatEM(object):
         self.pool = multiprocessing.Pool()
         self.trajectories = []
         self.initialise_trajectories(props.getint('initialisation', 'trajectory_size'))
+        self.generation_count = 0
 
     def initialise_trajectories(self, num_trajectories):
         '''
@@ -120,7 +121,7 @@ class NeatEM(object):
 
         logger.debug("Finished: Initialising neural networks")
 
-        # For each individual in the population
+
         '''
         Collect a set of trajectories from the trajectories
         '''
@@ -130,6 +131,10 @@ class NeatEM(object):
             state_transitions = state_transitions | set(trajectory)
 
         tstart = datetime.now()
+        '''
+        For each individual update value function using TD error and experience replay
+        And update the policy parameter
+        '''
         for genome, net in nets:
             experience_replay = props.getint('evaluation', 'experience_replay')
             random_state_transitions = random.sample(state_transitions, experience_replay)
@@ -140,24 +145,7 @@ class NeatEM(object):
                                           state_transition.get_reward())
 
             # update policy parameter
-            # we only update the policy parameter if it was used for the action
             net.update_policy_function(state_transitions)
-
-            # now assign fitness to each individual/genome
-            # fitness is the log prob of following the best trajectory
-            # I need the get action to return me the probabilities of the actions rather than a numerical action
-            best_trajectory = self.trajectories[0]
-            best_trajectory_prob = 0
-            total_reward, _, trajectory_state_transitions = best_trajectory
-            for j, state_transition in enumerate(trajectory_state_transitions):
-                # calculate probability of the action probability where policy action = action
-                state_features = net.get_network().activate(state_transition.get_start_state())
-                _, actions_distribution = net.get_policy().get_action(state_features)
-                best_trajectory_prob += np.log(actions_distribution[state_transition.get_action()])
-
-            fitness = best_trajectory_prob
-            genome.fitness = fitness
-
 
         # select K random agents to perform rollout
 
@@ -210,10 +198,31 @@ class NeatEM(object):
         logger.debug("Best Trajectory reward: %f", -self.trajectories[0][0])
         logger.debug("Worst Trajectory reward: %f", -self.trajectories[len(self.trajectories) - 1][0])
 
-        for i in range(len(self.trajectories)):
-            _, __, trajectory = self.trajectories[i]
-            self.state_transitions = self.state_transitions | set(trajectory)
+        for genome, net in nets:
+            # now assign fitness to each individual/genome
+            # fitness is the log prob of following the best trajectory
+            # I need the get action to return me the probabilities of the actions rather than a numerical action
+            best_trajectory = self.trajectories[0]
+            best_trajectory_prob = 0
+            total_reward, _, trajectory_state_transitions = best_trajectory
+            for j, state_transition in enumerate(trajectory_state_transitions):
+                # calculate probability of the action probability where policy action = action
+                state_features = net.get_network().activate(state_transition.get_start_state())
+                _, actions_distribution = net.get_policy().get_action(state_features)
+                best_trajectory_prob += np.log(actions_distribution[state_transition.get_action()])
 
+            fitness = best_trajectory_prob
+            genome.fitness = fitness
+
+        # save the best individual's genome
+        genome, net = min(nets, key=lambda x: x[0].fitness)
+        logger.debug("Best genome: %s", genome)
+        logger.debug("Best genome fitness: %f", genome.fitness)
+        # save genome
+        with open('best_genomes/gen-{0}-genome'.format(self.generation_count), 'wb') as f:
+            pickle.dump(genome, f)
+
+        self.generation_count += 1
         logger.debug("Finished: Generating %d new trajectories", num_new_trajectories)
         logger.debug("Completed Generation. Time taken: %f", (datetime.now() - tstart).total_seconds())
 
@@ -280,10 +289,16 @@ if __name__ == '__main__':
             # Run for 5 generations
             population.execute_algorithm(props.getint('neuralnet', 'generation'))
 
-            visualize.plot_stats(population.stats)
-            # Use the five best genomes seen so far as an ensemble-ish control system.
-            best_genomes = population.stats.best_unique_genomes(5)
-            best_networks = []
+            visualize.plot_stats(population.stats, ylog=False, view=False, filename="fitness.svg")
+
+            mfs = sum(population.stats.get_fitness_mean()[-20:]) / 20.0
+            logger.debug("Average mean fitness over last 20 generations: %f", mfs)
+
+            mfs = sum(population.stats.get_fitness_stat(min)[-20:]) / 20.0
+            logger.debug("Average min fitness over last 20 generations: %f", mfs)
+
+            # Use the 10 best genomes seen so far
+            best_genomes = population.stats.best_unique_genomes(10)
 
             save_best_genomes(best_genomes, True)
             break
