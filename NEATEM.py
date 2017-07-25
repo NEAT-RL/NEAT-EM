@@ -12,7 +12,7 @@ import gym
 import gym.wrappers as wrappers
 import configparser
 import visualize
-from NEATAgent.NeatEMAgent import NeatEMAgent
+from NEATAgent.NEATEMAgent import NeatEMAgent
 import numpy as np
 import heapq
 from datetime import datetime
