@@ -147,6 +147,21 @@ class NeatEM(object):
             # update policy parameter
             net.update_policy_function(state_transitions)
 
+            # now assign fitness to each individual/genome
+            # fitness is the log prob of following the best trajectory
+            # I need the get action to return me the probabilities of the actions rather than a numerical action
+            best_trajectory = self.trajectories[len(self.trajectories) - 1]
+            best_trajectory_prob = 0
+            total_reward, _, trajectory_state_transitions = best_trajectory
+            for j, state_transition in enumerate(trajectory_state_transitions):
+                # calculate probability of the action probability where policy action = action
+                state_features = net.get_network().activate(state_transition.get_start_state())
+                _, actions_distribution = net.get_policy().get_action(state_features)
+                best_trajectory_prob += np.log(actions_distribution[state_transition.get_action()])
+
+            fitness = best_trajectory_prob
+            genome.fitness = fitness
+
         # select K random agents to perform rollout
 
         num_new_trajectories = props.getint('evaluation', 'new_trajectories')
@@ -189,30 +204,20 @@ class NeatEM(object):
             rand_policy = new_policy
 
         # strip weak trajectories from trajectory_set and add state transitions to set state_transitions
-        self.trajectories = self.trajectories[props.getint('initialisation', 'trajectory_size'):]
+        self.trajectories = self.trajectories[
+                            len(self.trajectories) - props.getint('initialisation', 'trajectory_size'):]
         logger.debug("Worst Trajectory reward: %f", self.trajectories[0][0])
         logger.debug("Best Trajectory reward: %f", self.trajectories[len(self.trajectories) - 1][0])
 
-        for genome, net in nets:
-            # now assign fitness to each individual/genome
-            # fitness is the log prob of following the best trajectory
-            # I need the get action to return me the probabilities of the actions rather than a numerical action
-            best_trajectory = self.trajectories[len(self.trajectories) - 1]
-            best_trajectory_prob = 0
-            total_reward, _, trajectory_state_transitions = best_trajectory
-            for j, state_transition in enumerate(trajectory_state_transitions):
-                # calculate probability of the action probability where policy action = action
-                state_features = net.get_network().activate(state_transition.get_start_state())
-                _, actions_distribution = net.get_policy().get_action(state_features)
-                best_trajectory_prob += np.log(actions_distribution[state_transition.get_action()])
-
-            fitness = best_trajectory_prob
-            genome.fitness = fitness
 
         # save the best individual's genome
-        genome, net = min(nets, key=lambda x: x[0].fitness)
+        genome, net = max(nets, key=lambda x: x[0].fitness)
         logger.debug("Best genome: %s", genome)
         logger.debug("Best genome fitness: %f", genome.fitness)
+
+        genome_worst, net = min(nets, key=lambda x: x[0].fitness)
+        logger.debug("Worst genome fitness: %f", genome_worst.fitness)
+
         # save genome
         with open('best_genomes/gen-{0}-genome'.format(self.generation_count), 'wb') as f:
             pickle.dump(genome, f)
