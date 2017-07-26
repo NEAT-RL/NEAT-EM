@@ -58,7 +58,11 @@ class NeatEMAgent(object):
 
                 action_prob = actions_distribution[state_transition.get_action()]
                 # check for matrix multiplication
-                component1 = np.dot(np.dot(action_prob * (action_prob - 1), phi), np.transpose(phi))
+                phi_dot = np.dot(action_prob * (action_prob - 1), np.array(phi))
+                # convert vector into a column vector
+                phi_dot = phi_dot.reshape(-1, 1)
+
+                component1 = np.matmul(phi_dot, phi_dot.transpose()) # produces a dimension * dimension matrix
 
                 phi_new = self.neural_net.activate(state_transition.get_end_state())
                 td_error = state_transition.get_reward() + self.gamma * self.valueFunction.get_value(phi_new) - self.valueFunction.get_value(phi)
