@@ -14,6 +14,7 @@ class SoftmaxPolicy(object):
         self.parameters = []
         self.num_actions = num_actions
         self.sigma = 1.0
+        self.learning_rate = 0.001
         self.initialise_parameters()
 
     def initialise_parameters(self):
@@ -75,7 +76,8 @@ class SoftmaxPolicy(object):
             capped_value = False
             delta_vector = delta[i]
             for j, param in enumerate(parameter):
-                new_value = max(min(param + delta_vector.delta[j], 10), -10)
+                new_value = max(min(param - self.learning_rate * delta_vector.delta[j], 10), -10)
+                # TODO: Look at KL divergence thing here
                 if math.fabs(new_value) == 10:
                     logger.debug("Capped parameter value from %f, to: %d", param + delta_vector.delta[j], new_value)
                     capped_value = True

@@ -121,7 +121,6 @@ class NeatEM(object):
 
         logger.debug("Finished: Initialising neural networks")
 
-
         '''
         Collect a set of trajectories from the trajectories
         '''
@@ -145,7 +144,7 @@ class NeatEM(object):
                                           state_transition.get_reward())
 
             # update policy parameter
-            net.update_policy_function(state_transitions)
+            net.update_policy_function(self.trajectories)
 
             # now assign fitness to each individual/genome
             # fitness is the log prob of following the best trajectory
@@ -256,11 +255,17 @@ if __name__ == '__main__':
     logger.debug("action space: %s", env.action_space)
     logger.debug("observation space: %s", env.observation_space)
 
+
+    # logger.debug(env.spec.tags.get('wrapper_config.TimeLimit.max_episode_steps'))
+    # env.spec.tags['wrapper_config.TimeLimit.max_episode_steps'] = 200
+    # logger.debug(env.spec.tags.get('wrapper_config.TimeLimit.max_episode_steps'))
+    env._max_episode_steps = 200
+
     # You provide the directory to write to (can be an existing
     # directory, including one with existing data -- all monitor files
     # will be namespaced). You can also dump to a tempdir if you'd
     # like: tempfile.mkdtemp().
-    # outdir = '/tmp/neat-em-data/' + str(datetime.now())
+    # outdir = '~/tmp/neat-em-data/' + str(datetime.now())
     # env = wrappers.Monitor(env, directory=outdir, force=True)
 
     # load properties
