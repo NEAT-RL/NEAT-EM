@@ -79,7 +79,7 @@ class NeatEM(object):
             terminal_reached = False
             steps = 0
             reward_count = 0
-            while not terminal_reached: # and steps < max_steps:
+            while not terminal_reached and steps < max_steps:
                 # sample action from the environment
                 action = env.action_space.sample()
                 next_state, reward, done, info = env.step(action)
@@ -152,7 +152,7 @@ class NeatEM(object):
             # I need the get action to return me the probabilities of the actions rather than a numerical action
             best_trajectory = heapq.nlargest(1, self.trajectories)
             best_trajectory_prob = 0
-            total_reward, _, trajectory_state_transitions = best_trajectory
+            total_reward, _, trajectory_state_transitions = best_trajectory[0]
             for j, state_transition in enumerate(trajectory_state_transitions):
                 # calculate probability of the action probability where policy action = action
                 state_features = net.get_network().activate(state_transition.get_start_state())
@@ -179,7 +179,7 @@ class NeatEM(object):
             steps = 0
             reward_count = 0
             new_trajectory = []
-            while not terminal_reached: # and steps < max_steps:
+            while not terminal_reached and steps < max_steps:
                 # env.render()
                 state_features = agent.get_network().activate(state)
                 action, actions_distribution = agent.get_policy().get_action(state_features)
