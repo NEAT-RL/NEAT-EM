@@ -79,7 +79,7 @@ class NeatEM(object):
             terminal_reached = False
             steps = 0
             reward_count = 0
-            while not terminal_reached and steps < max_steps:
+            while not terminal_reached: # and steps < max_steps:
                 # sample action from the environment
                 action = env.action_space.sample()
                 next_state, reward, done, info = env.step(action)
@@ -100,13 +100,14 @@ class NeatEM(object):
         self.population.run(self.fitness_function, generations)
 
     def fitness_function(self, genomes, config):
-        '''
+        """
         This method is called every generation.
         Create new array
         :param genomes:
         :param config:
         :return:
-        '''
+        """
+        heapq.heapify(self.trajectories)
 
         logger.debug("Initialising neural networks")
         nets = []
@@ -149,7 +150,7 @@ class NeatEM(object):
             # now assign fitness to each individual/genome
             # fitness is the log prob of following the best trajectory
             # I need the get action to return me the probabilities of the actions rather than a numerical action
-            best_trajectory = self.trajectories[len(self.trajectories) - 1]
+            best_trajectory = heapq.nlargest(1, self.trajectories)
             best_trajectory_prob = 0
             total_reward, _, trajectory_state_transitions = best_trajectory
             for j, state_transition in enumerate(trajectory_state_transitions):
@@ -178,7 +179,7 @@ class NeatEM(object):
             steps = 0
             reward_count = 0
             new_trajectory = []
-            while not terminal_reached and steps < max_steps:
+            while not terminal_reached: # and steps < max_steps:
                 # env.render()
                 state_features = agent.get_network().activate(state)
                 action, actions_distribution = agent.get_policy().get_action(state_features)
@@ -199,10 +200,9 @@ class NeatEM(object):
             heapq.heappush(self.trajectories, (reward_count, datetime.now(), new_trajectory))
 
         # strip weak trajectories from trajectory_set and add state transitions to set state_transitions
-        self.trajectories = self.trajectories[
-                            len(self.trajectories) - props.getint('initialisation', 'trajectory_size'):]
-        logger.debug("Worst Trajectory reward: %f", self.trajectories[0][0])
-        logger.debug("Best Trajectory reward: %f", self.trajectories[len(self.trajectories) - 1][0])
+        self.trajectories = heapq.nlargest(props.getint('initialisation', 'trajectory_size'), self.trajectories)
+        logger.debug("Worst Trajectory reward: %f", self.trajectories[len(self.trajectories) - 1][0])
+        logger.debug("Best Trajectory reward: %f", self.trajectories[0][0])
 
 
         # save the best individual's genome
@@ -259,7 +259,7 @@ if __name__ == '__main__':
     # logger.debug(env.spec.tags.get('wrapper_config.TimeLimit.max_episode_steps'))
     # env.spec.tags['wrapper_config.TimeLimit.max_episode_steps'] = 200
     # logger.debug(env.spec.tags.get('wrapper_config.TimeLimit.max_episode_steps'))
-    env._max_episode_steps = 200
+    # env._max_episode_steps = 200
 
     # You provide the directory to write to (can be an existing
     # directory, including one with existing data -- all monitor files
