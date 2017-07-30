@@ -4,6 +4,8 @@ import copy
 import warnings
 
 import graphviz
+import matplotlib
+matplotlib.use('agg')  # comment this out if you want to view the stats. Otherwise this will save it to a file.
 import matplotlib.pyplot as plt
 import numpy as np
 

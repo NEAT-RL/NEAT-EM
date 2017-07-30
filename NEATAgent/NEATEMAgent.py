@@ -12,7 +12,6 @@ class NeatEMAgent(object):
         self.fitness = 0
         self.gamma = 0.99
         self.alpha = 0.1
-        self.beta = 0.01
 
     def get_value_function(self):
         return self.valueFunction
@@ -43,7 +42,7 @@ class NeatEMAgent(object):
         Need to update the policy parameters which was used to make the action.
         There are N number of discrete actions.
         This N number is stored in Policy so I should be looking to put this method there 
-        :param state_transitions: 
+        :param trajectories: 
         :return:
         '''
         # Update the policy parameters for the actions that are taken
@@ -62,7 +61,7 @@ class NeatEMAgent(object):
                 # convert vector into a column vector
                 phi_dot = phi_dot.reshape(-1, 1)
 
-                component1 = np.matmul(phi_dot, phi_dot.transpose()) # produces a dimension * dimension matrix
+                component1 = np.matmul(phi_dot, phi_dot.transpose())  # produces a dimension * dimension matrix
 
                 phi_new = self.neural_net.activate(state_transition.get_end_state())
                 td_error = state_transition.get_reward() + self.gamma * self.valueFunction.get_value(phi_new) - self.valueFunction.get_value(phi)
@@ -77,14 +76,14 @@ class NeatEMAgent(object):
             delta[i].component2 = np.dot(2.0 / len(trajectories), delta[i].component2)
             delta[i].calculate_delta()
 
-        self.policy.update_parameters(delta) # delta is a vector of size (num of actions) and each element is a vector of policy parameter
+        self.policy.update_parameters(delta)  # delta is a vector of size (num of actions) and each element is a vector of policy parameter
 
 
 class DeltaPolicy(object):
 
     def __init__(self, dimension):
         self.component1 = 0
-        self.component2 = 0
+        self.component2 = np.zeros(dimension, dtype=float)
         self.delta = np.zeros(dimension, dtype=float)
         self.state_transition_count = 0.0
 
