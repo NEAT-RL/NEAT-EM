@@ -49,7 +49,7 @@ class NeatEMAgent(object):
         # Update the policy parameters for the actions that are taken
 
         # Create a delta vector of size [# actions] where each element is a delta policy object
-        delta = np.array([DeltaPolicy() for _ in range(self.policy.get_num_actions())])
+        delta = np.array([DeltaPolicy(self.dimension) for _ in range(self.policy.get_num_actions())])
 
         for j, (total_reward, _, state_transitions) in enumerate(trajectories):
             for state_transition in state_transitions:
@@ -82,10 +82,10 @@ class NeatEMAgent(object):
 
 class DeltaPolicy(object):
 
-    def __init__(self):
+    def __init__(self, dimension):
         self.component1 = 0
         self.component2 = 0
-        self.delta = 0
+        self.delta = np.zeros(dimension, dtype=float)
         self.state_transition_count = 0.0
 
     def add(self, component1, component2):
