@@ -81,8 +81,13 @@ class NeatEM(object):
             reward_count = 0
             while not terminal_reached and steps < max_steps:
                 # sample action from the environment
+                # Double the force of action (i.e. perform it for two steps)
                 action = env.action_space.sample()
                 next_state, reward, done, info = env.step(action)
+                next_state, reward2, done, info = env.step(action)
+                
+                reward += reward2
+
                 state_transition = StateTransition(state, action, reward, next_state)
                 # insert state transition to the trajectory
                 trajectory.append(state_transition)
@@ -182,8 +187,13 @@ class NeatEM(object):
             while not terminal_reached and steps < max_steps:
                 # env.render()
                 state_features = agent.get_network().activate(state)
+                # Double the force of action (i.e. perform it for two steps)
                 action, actions_distribution = agent.get_policy().get_action(state_features)
                 next_state, reward, done, info = env.step(action)
+                next_state, reward2, done, info = env.step(action)
+
+                reward += reward2
+
                 # insert state transition to the trajectory
                 state_transition = StateTransition(state, action, reward, next_state)
                 new_trajectory.append(state_transition)
@@ -203,7 +213,6 @@ class NeatEM(object):
         self.trajectories = heapq.nlargest(props.getint('initialisation', 'trajectory_size'), self.trajectories)
         logger.debug("Worst Trajectory reward: %f", self.trajectories[len(self.trajectories) - 1][0])
         logger.debug("Best Trajectory reward: %f", self.trajectories[0][0])
-
 
         # save the best individual's genome
         genome, net = nets_sorted[0]
@@ -243,23 +252,25 @@ def save_best_genomes(best_genomes, has_won):
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description=None)
-    parser.add_argument('env_id', nargs='?', default='MountainCar-v0', help='Select the environment to run')
+    parser.add_argument('env_id', nargs='?', default='MountainCarExtraLong-v0', help='Select the environment to run')
     args = parser.parse_args()
 
     gym.undo_logger_setup()
     logging.basicConfig(filename='log/debug-'+str(datetime.now())+'.log', level=logging.DEBUG)
     logger = logging.getLogger()
     logging.Formatter('[%(asctime)s] %(message)s')
-    env = gym.make(args.env_id).env
-
-    logger.debug("action space: %s", env.action_space)
-    logger.debug("observation space: %s", env.observation_space)
-
+    env = gym.make(args.env_id)
 
     # logger.debug(env.spec.tags.get('wrapper_config.TimeLimit.max_episode_steps'))
     # env.spec.tags['wrapper_config.TimeLimit.max_episode_steps'] = 200
     # logger.debug(env.spec.tags.get('wrapper_config.TimeLimit.max_episode_steps'))
     # env._max_episode_steps = 200
+
+    env = env.env
+
+    logger.debug("action space: %s", env.action_space)
+    logger.debug("observation space: %s", env.observation_space)
+
 
     # You provide the directory to write to (can be an existing
     # directory, including one with existing data -- all monitor files
