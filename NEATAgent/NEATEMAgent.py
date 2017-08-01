@@ -34,7 +34,7 @@ class NeatEMAgent(object):
             delta = np.dot(derivative, self.valueFunction.get_dimension())
             delta_omega += delta
 
-        delta_omega /= len(state_transition)
+        delta_omega /= len(state_transitions)
         self.valueFunction.update_parameters(delta_omega)
 
     def update_policy_function(self, trajectories):
