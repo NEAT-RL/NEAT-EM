@@ -93,8 +93,8 @@ class SoftmaxPolicy(object):
                     self.parameters[i] = new_parameters[i]
                     break
                 else:
-                    logger.debug("Not updating policy parameter as kl_difference was %f. Learning rate=%f",
-                                 kl_difference, learning_rate)
+                    # logger.debug("Not updating policy parameter as kl_difference was %f. Learning rate=%f",
+                    #              kl_difference, learning_rate)
                     learning_rate /= 10  # reduce learning rate
                     # recalculate gradient using the new learning rate
                     new_parameters[i] = self.__calculate_gradient(self.parameters[i], delta[i], learning_rate)
