@@ -61,6 +61,7 @@ class NeatEM(object):
         self.trajectories = []
         self.initialise_trajectories(props.getint('initialisation', 'trajectory_size'))
         self.generation_count = 0
+        self.best_agents = []
 
     def initialise_trajectories(self, num_trajectories):
         '''
@@ -231,7 +232,7 @@ class NeatEM(object):
         logger.debug("Best genome fitness: %f", genome.fitness)
 
         # Select best agent (using fitness function) and test
-        self.test_best_agent(net)
+        self.best_agents.append((self.generation_count, genome, net))
 
         genome_worst, net = nets_sorted[len(nets_sorted) - 1]
         logger.debug("Worst genome fitness: %f", genome_worst.fitness)
@@ -244,56 +245,51 @@ class NeatEM(object):
         logger.debug("Finished: Generating %d new trajectories", num_new_trajectories)
         logger.debug("Completed Generation. Time taken: %f", (datetime.now() - tstart).total_seconds())
 
-    def test_best_agent(self, agent):
-        outdir = '~/tmp/neat-em-data/' + str(datetime.now()) + '_generation_'+str(self.generation_count)
-        global env
-        env = wrappers.Monitor(env, directory=outdir, force=True)
 
-        logger.debug("Generating best agent results")
-        t_start = datetime.now()
+def test_best_agent(generation_count, genome, agent):
+    logger.debug("Generating best agent results: %d", generation_count)
+    t_start = datetime.now()
 
-        max_steps = props.getint('initialisation', 'max_steps')
-        test_episodes = props.getint('test', 'test_episodes')
-        step_size = props.getint('initialisation', 'step_size')
+    max_steps = props.getint('initialisation', 'max_steps')
+    test_episodes = props.getint('test', 'test_episodes')
+    step_size = props.getint('initialisation', 'step_size')
 
-        total_steps = 0.0
-        total_rewards = 0.0
-        for i in range(test_episodes):
-            state = env.reset()
-            terminal_reached = False
-            steps = 0
-            while not terminal_reached and steps < max_steps:
-                env.render()
-                state_features = agent.get_network().activate(state)
-                action, actions_distribution = agent.get_policy().get_action(state_features)
-                next_state, reward, done, info = env.step(action)
+    total_steps = 0.0
+    total_rewards = 0.0
+    for i in range(test_episodes):
+        state = env.reset()
+        terminal_reached = False
+        steps = 0
+        while not terminal_reached and steps < max_steps:
+            env.render()
+            state_features = agent.get_network().activate(state)
+            action, actions_distribution = agent.get_policy().get_action(state_features)
+            next_state, reward, done, info = env.step(action)
 
-                for x in range(step_size - 1):
-                    if done:
-                        terminal_reached = True
-                        break
-                    next_state, reward2, done, info = env.step(action)
-                    reward += reward2
-
-                total_rewards += reward
-                state = next_state
-
-                steps += 1
+            for x in range(step_size - 1):
                 if done:
                     terminal_reached = True
-            total_steps += steps
-        average_steps_per_episodes = total_steps / test_episodes
-        average_rewards_per_episodes = total_rewards / test_episodes
+                    break
+                next_state, reward2, done, info = env.step(action)
+                reward += reward2
 
-        # save this to file along with the generation number
-        # TODO: Do the writing at the termination of the algorithm. For now it is useful for debugging
-        entry = [self.generation_count, average_steps_per_episodes, average_rewards_per_episodes]
-        with open(r'agent_evaluation.csv', 'a') as f:
-            writer = csv.writer(f)
-            writer.writerow(entry)
+            total_rewards += reward
+            state = next_state
 
-        env.close()
-        logger.debug("Finished: evaluating best agent. Time taken: %f", (datetime.now() - t_start).total_seconds())
+            steps += 1
+            if done:
+                terminal_reached = True
+        total_steps += steps
+    average_steps_per_episodes = total_steps / test_episodes
+    average_rewards_per_episodes = total_rewards / test_episodes
+
+    # save this to file along with the generation number
+    entry = [generation_count, average_steps_per_episodes, average_rewards_per_episodes]
+    with open(r'agent_evaluation.csv', 'a') as f:
+        writer = csv.writer(f)
+        writer.writerow(entry)
+
+    logger.debug("Finished: evaluating best agent. Time taken: %f", (datetime.now() - t_start).total_seconds())
 
 
 def save_best_genomes(best_genomes, has_won):
@@ -344,7 +340,6 @@ if __name__ == '__main__':
     # outdir = '~/tmp/neat-em-data/' + str(datetime.now())
     # env = wrappers.Monitor(env, directory=outdir, force=True)
 
-
     # load properties
     logger.debug("Loading Properties File")
     props = configparser.ConfigParser()
@@ -366,6 +361,12 @@ if __name__ == '__main__':
         try:
             # Run for 5 generations
             population.execute_algorithm(props.getint('neuralnet', 'generation'))
+
+            # Generate test results
+            outdir = '~/tmp/neat-em-data/' + str(datetime.now())
+            env = wrappers.Monitor(env, directory=outdir, force=True)
+            for (generation_count, genome, agent) in population.best_agents:
+                test_best_agent(generation_count, genome, agent)
 
             visualize.plot_stats(population.stats, ylog=False, view=False, filename="fitness.svg")
 
