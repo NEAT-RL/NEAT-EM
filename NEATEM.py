@@ -16,7 +16,7 @@ from NEATAgent.NEATEMAgent import NeatEMAgent
 import numpy as np
 import heapq
 from datetime import datetime
-
+import csv
 
 class StateTransition(object):
     def __init__(self, start_state, action, reward, end_state):
@@ -81,7 +81,6 @@ class NeatEM(object):
             reward_count = 0
             while not terminal_reached and steps < max_steps:
                 # sample action from the environment
-                # Double the force of action (i.e. perform it for two steps)
                 action = env.action_space.sample()
                 next_state, reward, done, info = env.step(action)
 
@@ -186,7 +185,7 @@ class NeatEM(object):
             while not terminal_reached and steps < max_steps:
                 # env.render()
                 state_features = agent.get_network().activate(state)
-                # Double the force of action (i.e. perform it for two steps)
+                # get recommended action and the action distribution using policy
                 action, actions_distribution = agent.get_policy().get_action(state_features)
                 next_state, reward, done, info = env.step(action)
 
@@ -215,6 +214,9 @@ class NeatEM(object):
         logger.debug("Best genome: %s", genome)
         logger.debug("Best genome fitness: %f", genome.fitness)
 
+        # Select best agent (using fitness function) and test
+        self.test_best_agent(net)
+
         genome_worst, net = nets_sorted[len(nets_sorted) - 1]
         logger.debug("Worst genome fitness: %f", genome_worst.fitness)
 
@@ -225,6 +227,44 @@ class NeatEM(object):
         self.generation_count += 1
         logger.debug("Finished: Generating %d new trajectories", num_new_trajectories)
         logger.debug("Completed Generation. Time taken: %f", (datetime.now() - tstart).total_seconds())
+
+    def test_best_agent(self, agent):
+        logger.debug("Generating best agent results")
+        t_start = datetime.now()
+
+        max_steps = props.getint('initialisation', 'max_steps')
+        test_episodes = props.getint('test', 'test_episodes')
+
+        total_steps = 0.0
+        total_rewards = 0.0
+        for i in range(test_episodes):
+            state = env.reset()
+            terminal_reached = False
+            steps = 0
+            while not terminal_reached and steps < max_steps:
+                env.render()
+                state_features = agent.get_network().activate(state)
+                action, actions_distribution = agent.get_policy().get_action(state_features)
+
+                next_state, reward, done, info = env.step(action)
+
+                total_rewards += reward
+                state = next_state
+                if done:
+                    terminal_reached = True
+                steps += 1
+            total_steps += steps
+        average_steps_per_episodes = total_steps / test_episodes
+        average_rewards_per_episodes = total_rewards / test_episodes
+
+        # save this to file along with the generation number
+        # TODO: Do the writing at the termination of the algorithm. For now it is useful for debugging
+        entry = [self.generation_count, average_steps_per_episodes, average_rewards_per_episodes]
+        with open(r'agent_evaluation', 'a') as f:
+            writer = csv.writer(f)
+            writer.writerow(entry)
+
+        logger.debug("Finished: evaluating best agent. Time taken: %f", (datetime.now() - t_start).total_seconds())
 
 
 def save_best_genomes(best_genomes, has_won):
