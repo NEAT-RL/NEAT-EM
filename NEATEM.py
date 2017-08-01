@@ -166,6 +166,10 @@ class NeatEM(object):
 
         num_new_trajectories = props.getint('evaluation', 'new_trajectories')
 
+        if num_new_trajectories > len(nets):
+            logger.debug("number of new trajectories is greater than the number of agents")
+            num_new_trajectories = len(nets)
+
         logger.debug("Generating %d new trajectories", num_new_trajectories)
 
         max_steps = props.getint('initialisation', 'max_steps')
