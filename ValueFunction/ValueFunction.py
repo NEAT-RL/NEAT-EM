@@ -5,11 +5,15 @@ class ValueFunction(object):
     def __init__(self, dimension):
         self.dimension = dimension
         self.parameters = np.zeros(dimension, dtype=float)
-        self.beta = 0.01
+        self.parameters.fill(1e-8)  # do not use zero vector
+        self.beta = 0.1
 
     def get_value(self, state_feature):
         return np.dot(self.parameters, state_feature)
 
+    def get_dimension(self):
+        return np.copy(self.parameters)
+
     def update_parameters(self, delta):
         for i, param in enumerate(self.parameters):
-            self.parameters[i] = param + self.beta * delta[i]
+            self.parameters[i] = param - self.beta * delta[i]

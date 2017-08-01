@@ -84,9 +84,6 @@ class NeatEM(object):
                 # Double the force of action (i.e. perform it for two steps)
                 action = env.action_space.sample()
                 next_state, reward, done, info = env.step(action)
-                next_state, reward2, done, info = env.step(action)
-                
-                reward += reward2
 
                 state_transition = StateTransition(state, action, reward, next_state)
                 # insert state transition to the trajectory
@@ -143,11 +140,9 @@ class NeatEM(object):
         for genome, net in nets:
             experience_replay = props.getint('evaluation', 'experience_replay')
             random_state_transitions = random.sample(state_transitions, experience_replay)
-            for i in range(experience_replay):
-                state_transition = random_state_transitions[i]
-                # update TD error and value function
-                net.update_value_function(state_transition.get_start_state(), state_transition.get_end_state(),
-                                          state_transition.get_reward())
+
+            # update value function
+            net.update_value_function(random_state_transitions)
 
             # update policy parameter
             net.update_policy_function(self.trajectories)
@@ -190,9 +185,6 @@ class NeatEM(object):
                 # Double the force of action (i.e. perform it for two steps)
                 action, actions_distribution = agent.get_policy().get_action(state_features)
                 next_state, reward, done, info = env.step(action)
-                next_state, reward2, done, info = env.step(action)
-
-                reward += reward2
 
                 # insert state transition to the trajectory
                 state_transition = StateTransition(state, action, reward, next_state)
