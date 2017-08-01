@@ -3,6 +3,7 @@ import numpy as np
 import math
 import logging
 from datetime import datetime
+import scipy.stats as stats
 
 logging.basicConfig(filename='log/policy-debug-' + str(datetime.now()) + '.log', level=logging.DEBUG)
 logger = logging.getLogger()
@@ -14,7 +15,9 @@ class SoftmaxPolicy(object):
         self.parameters = []
         self.num_actions = num_actions
         self.sigma = 1.0
-        self.learning_rate = 0.001/10
+        self.default_learning_rate = 0.001
+        self.kl_threshold = 0.001
+        self.tiny = 1e-8
         self.initialise_parameters()
 
     def initialise_parameters(self):
@@ -25,7 +28,9 @@ class SoftmaxPolicy(object):
          - Maximising log likelihood etc
         :return: 
         """
-        self.parameters = np.random.uniform(low=-1, high=1, size=(self.num_actions, self.dimension))
+        self.parameters = np.random.uniform(low=self.tiny, high=1, size=(self.num_actions, self.dimension))
+        # self.parameters = np.zeros(shape=(self.num_actions, self.dimension), dtype=float)
+        # self.parameters.fill(self.tiny)
 
     def get_num_actions(self):
         return self.num_actions
@@ -70,19 +75,38 @@ class SoftmaxPolicy(object):
         Note: Number of policy parameters = number of actions.
         Each delta object contains a delta of the policy parameter.
         :param delta: 
-        :return: 
+        :return:
+        Assume size of delta == number of actions
         """
-        for i, parameter in enumerate(self.parameters):
-            capped_value = False
-            delta_vector = delta[i]
-            for j, param in enumerate(parameter):
-                new_value = max(min(param - self.learning_rate * delta_vector.delta[j], 10), -10)
-                # TODO: Look at KL divergence thing here
-                if math.fabs(new_value) == 10:
-                    logger.debug("Capped parameter value from %f, to: %d",
-                                 param - self.learning_rate * delta_vector.delta[j], new_value)
-                    capped_value = True
-                parameter[j] = new_value
+        # Calculate KL-divergence
 
-            if capped_value:
-                logger.debug("Policy Parameter was capped: %s", parameter)
+        new_parameters = np.zeros(shape=(self.num_actions, self.dimension), dtype=float)
+
+        for i in range(len(self.parameters)):
+            new_parameters[i] = self.__calculate_gradient(self.parameters[i], delta[i])
+
+        for i in range(len(self.parameters)):
+            learning_rate = self.default_learning_rate
+            for j in range(10):
+                kl_difference = stats.entropy(new_parameters[i], self.parameters[i])
+                if kl_difference < self.kl_threshold:
+                    self.parameters[i] = new_parameters[i]
+                    break
+                else:
+                    logger.debug("Not updating policy parameter as kl_difference was %f. Learning rate=%f",
+                                 kl_difference, learning_rate)
+                    learning_rate /= 10  # reduce learning rate
+                    # recalculate gradient using the new learning rate
+                    new_parameters[i] = self.__calculate_gradient(self.parameters[i], delta[i], learning_rate)
+
+    def __calculate_gradient(self, parameter, delta_vector, learning_rate=None):
+        new_parameter = np.zeros(shape=self.dimension, dtype=float)
+
+        if learning_rate is None:
+            learning_rate = self.default_learning_rate
+
+        for j, param in enumerate(parameter):
+            new_value = max(min(param - learning_rate * delta_vector.delta[j], 10), -10)
+            new_parameter[j] = new_value + self.tiny  # adding tiny here to avoid getting potential 0 value
+
+        return new_parameter
