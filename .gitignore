@@ -1,11 +1,15 @@
 # neat checkpoints
 neat-checkpoint*
-
+fitness.svg
 agent_evaluation.csv
 
 # notes
 notes.txt
 
+results/
+best_genomes/
+log/
+videos/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

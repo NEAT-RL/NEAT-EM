@@ -340,14 +340,14 @@ if __name__ == '__main__':
     # load properties
     logger.debug("Loading Properties File")
     props = configparser.ConfigParser()
-    prop_path = os.path.join(local_dir, 'props/{0}/neatem_properties.ini'.format(env.spec.id))
+    prop_path = os.path.join(local_dir, 'properties/{0}/neatem_properties.ini'.format(env.spec.id))
     props.read(prop_path)
     logger.debug("Finished: Loading Properties File")
 
     # Load the config file, which is assumed to live in
     # the same directory as this script.
 
-    config_path = os.path.join(local_dir, 'props/{0}/config'.format(env.spec.id))
+    config_path = os.path.join(local_dir, 'properties/{0}/config'.format(env.spec.id))
     config = neat.Config(neat.DefaultGenome, neat.DefaultReproduction, neat.DefaultSpeciesSet, neat.DefaultStagnation,
                          config_path)
 
