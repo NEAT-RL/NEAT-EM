@@ -6,7 +6,6 @@ import pickle
 import argparse
 import logging
 import random
-import sys
 import neat
 import gym
 import gym.wrappers as wrappers
@@ -17,6 +16,7 @@ import numpy as np
 import heapq
 from datetime import datetime
 import csv
+
 
 class StateTransition(object):
     def __init__(self, start_state, action, reward, end_state):
@@ -62,6 +62,19 @@ class NeatEM(object):
         self.initialise_trajectories(props.getint('initialisation', 'trajectory_size'))
         self.generation_count = 0
         self.best_agents = []
+        self.__save_fixed_genome()
+
+    def __save_fixed_genome(self):
+        # save fixed genome
+        with open('best_genomes/fixed-genome', 'wb') as f:
+            pickle.dump(self.population.population.get(1), f)
+
+    def __get_fixed_genome(self):
+        # get fixed genome
+        with open('best_genomes/fixed-genome', 'rb') as f:
+            genome = pickle.load(f)
+
+        return genome
 
     def initialise_trajectories(self, num_trajectories):
         '''
@@ -119,13 +132,17 @@ class NeatEM(object):
         """
         logger.debug("Initialising neural networks")
         nets = []
+
+        # load fixed genome
+        fixed_genome = self.__get_fixed_genome()
         for genome_id, genome in genomes:
             # reinitialise the agents
-            network = neat.nn.FeedForwardNetwork.create(genome, config)
+            network = neat.nn.FeedForwardNetwork.create(fixed_genome, config)
             neat_network = NeatEMAgent(network,
                                        props.getint('neuralnet', 'dimension'),
                                        props.getint('policy', 'num_actions'))
-            nets.append((genome, neat_network))
+            nets.append((fixed_genome, neat_network))
+            # need to assign a fitness to each genome even though we aren't using NEAT right now
             genome.fitness = 0
 
         logger.debug("Finished: Initialising neural networks")
@@ -166,7 +183,7 @@ class NeatEM(object):
                 best_trajectory_prob += np.log(actions_distribution[state_transition.get_action()])
 
             fitness = best_trajectory_prob
-            genome.fitness = fitness
+            net.fitness = fitness
 
         # select K random agents to perform rollout
 
@@ -180,7 +197,7 @@ class NeatEM(object):
 
         max_steps = props.getint('initialisation', 'max_steps')
         step_size = props.getint('initialisation', 'step_size')
-        nets_sorted = sorted(nets, key=lambda x: x[0].fitness, reverse=True) # could replace this with an in-place sort
+        nets_sorted = sorted(nets, key=lambda a: a[1].fitness, reverse=True) # could replace this with an in-place sort
 
         for i in range(num_new_trajectories):
             genome, agent = nets_sorted[i]
@@ -227,13 +244,13 @@ class NeatEM(object):
         # save the best individual's genome
         genome, net = nets_sorted[0]
         logger.debug("Best genome: %s", genome)
-        logger.debug("Best genome fitness: %f", genome.fitness)
+        logger.debug("Best genome fitness: %f", net.fitness)
 
         # Select best agent (using fitness function) and test
         self.best_agents.append((self.generation_count, genome, net))
 
-        genome_worst, net = nets_sorted[len(nets_sorted) - 1]
-        logger.debug("Worst genome fitness: %f", genome_worst.fitness)
+        genome_worst, net_worst = nets_sorted[len(nets_sorted) - 1]
+        logger.debug("Worst genome fitness: %f", net_worst.fitness)
 
         # save genome
         with open('best_genomes/gen-{0}-genome'.format(self.generation_count), 'wb') as f:
