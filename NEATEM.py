@@ -117,8 +117,6 @@ class NeatEM(object):
         :param config:
         :return:
         """
-        heapq.heapify(self.trajectories)
-
         logger.debug("Initialising neural networks")
         nets = []
         for genome_id, genome in genomes:
@@ -313,7 +311,7 @@ def save_best_genomes(best_genomes, has_won):
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description=None)
-    parser.add_argument('env_id', nargs='?', default='MountainCarExtraLong-v0', help='Select the environment to run')
+    parser.add_argument('env_id', nargs='?', default='CartPole-v0', help='Select the environment to run')
     args = parser.parse_args()
 
     gym.undo_logger_setup()
@@ -328,7 +326,6 @@ if __name__ == '__main__':
     # env._max_episode_steps = 200
 
     # env = env.env
-
     logger.debug("action space: %s", env.action_space)
     logger.debug("observation space: %s", env.observation_space)
 
@@ -339,17 +336,18 @@ if __name__ == '__main__':
     # like: tempfile.mkdtemp().
     # outdir = '~/tmp/neat-em-data/' + str(datetime.now())
     # env = wrappers.Monitor(env, directory=outdir, force=True)
-
+    local_dir = os.path.dirname(__file__)
     # load properties
     logger.debug("Loading Properties File")
     props = configparser.ConfigParser()
-    props.read('neatem_properties.ini')
+    prop_path = os.path.join(local_dir, 'props/{0}/neatem_properties.ini'.format(env.spec.id))
+    props.read(prop_path)
     logger.debug("Finished: Loading Properties File")
 
     # Load the config file, which is assumed to live in
     # the same directory as this script.
-    local_dir = os.path.dirname(__file__)
-    config_path = os.path.join(local_dir, 'config')
+
+    config_path = os.path.join(local_dir, 'props/{0}/config'.format(env.spec.id))
     config = neat.Config(neat.DefaultGenome, neat.DefaultReproduction, neat.DefaultSpeciesSet, neat.DefaultStagnation,
                          config_path)
 
@@ -363,7 +361,7 @@ if __name__ == '__main__':
             population.execute_algorithm(props.getint('neuralnet', 'generation'))
 
             # Generate test results
-            outdir = '~/tmp/neat-em-data/' + str(datetime.now())
+            outdir = 'videos/tmp/neat-em-data/{0}-{1}'.format(env.spec.id, str(datetime.now()))
             env = wrappers.Monitor(env, directory=outdir, force=True)
             for (generation_count, genome, agent) in population.best_agents:
                 test_best_agent(generation_count, genome, agent)
