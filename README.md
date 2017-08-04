@@ -15,7 +15,24 @@ Experiment logs are written into log directory.
 Run this file and if you want to save the std outputs for clarity use following command:
 
 ```
-python NEATEM.py > output.log 2&>1
+python NEATEM.py [Environment Id] > output.log 2&>1
 ```
 
+## Current Environments Configured
+| Enviornment id  | Info  |
+|---|---|
+| CartPole-v0  | Standard implementation of gym cartpole   |
+| MountainCar-v0  | Standard implementation of gym mountain car problem  |
+| MountainCarExtraLong-v0  | Custom implementation of gym mountain car problem where the episode length is 999.  |
 
+
+Use any of these environment id as an argument.
+
+## Adding your own environment
+The code uses the environment id to extract properties from the *properties* directory.
+The arrangement of the properties directory is
+```
+properties/<Environment id>/Config
+properties/<Environemt id>/neatem_properties.ini
+```
+Adding your environment involves creating a new directory of your environment id and add the two properties files used by the algorithm
