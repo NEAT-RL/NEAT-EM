@@ -355,38 +355,35 @@ if __name__ == '__main__':
 
     # Run until the winner from a generation is able to solve the environment
     # or the user interrupts the process.
-    while 1:
-        try:
-            # Run for 5 generations
-            population.execute_algorithm(props.getint('neuralnet', 'generation'))
+    try:
+        # Run for 5 generations
+        population.execute_algorithm(props.getint('neuralnet', 'generation'))
 
-            # Generate test results
-            outdir = 'videos/tmp/neat-em-data/{0}-{1}'.format(env.spec.id, str(datetime.now()))
-            env = wrappers.Monitor(env, directory=outdir, force=True)
-            for (generation_count, genome, agent) in population.best_agents:
-                test_best_agent(generation_count, genome, agent)
+        # Generate test results
+        outdir = 'videos/tmp/neat-em-data/{0}-{1}'.format(env.spec.id, str(datetime.now()))
+        env = wrappers.Monitor(env, directory=outdir, force=True)
+        for (generation_count, genome, agent) in population.best_agents:
+            test_best_agent(generation_count, genome, agent)
 
-            visualize.plot_stats(population.stats, ylog=False, view=False, filename="fitness.svg")
+        visualize.plot_stats(population.stats, ylog=False, view=False, filename="fitness.svg")
 
-            mfs = sum(population.stats.get_fitness_mean()[-20:]) / 20.0
-            logger.debug("Average mean fitness over last 20 generations: %f", mfs)
+        mfs = sum(population.stats.get_fitness_mean()[-20:]) / 20.0
+        logger.debug("Average mean fitness over last 20 generations: %f", mfs)
 
-            mfs = sum(population.stats.get_fitness_stat(min)[-20:]) / 20.0
-            logger.debug("Average min fitness over last 20 generations: %f", mfs)
+        mfs = sum(population.stats.get_fitness_stat(min)[-20:]) / 20.0
+        logger.debug("Average min fitness over last 20 generations: %f", mfs)
 
-            # Use the 10 best genomes seen so far
-            best_genomes = population.stats.best_unique_genomes(10)
+        # Use the 10 best genomes seen so far
+        best_genomes = population.stats.best_unique_genomes(10)
 
-            save_best_genomes(best_genomes, True)
-            break
+        save_best_genomes(best_genomes, True)
 
-        except KeyboardInterrupt:
-            logger.debug("User break.")
-            # save the best neural network or save top 5?
-            best_genomes = population.stats.best_unique_genomes(5)
+    except KeyboardInterrupt:
+        logger.debug("User break.")
+        # save the best neural network or save top 5?
+        best_genomes = population.stats.best_unique_genomes(5)
 
-            save_best_genomes(best_genomes, False)
-            break
+        save_best_genomes(best_genomes, False)
 
     env.close()
 
