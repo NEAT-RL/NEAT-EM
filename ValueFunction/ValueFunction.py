@@ -11,7 +11,7 @@ class ValueFunction(object):
     def get_value(self, state_feature):
         return np.dot(self.parameters, state_feature)
 
-    def get_dimension(self):
+    def get_parameter(self):
         return np.copy(self.parameters)
 
     def update_parameters(self, delta):
