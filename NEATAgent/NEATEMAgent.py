@@ -2,7 +2,7 @@ from ValueFunction.ValueFunction import ValueFunction
 from Policy.SoftmaxPolicy import SoftmaxPolicy
 import numpy as np
 from datetime import datetime
-import Feature
+from . import Feature
 import math
 """
 Mountain car
