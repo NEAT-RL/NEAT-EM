@@ -143,8 +143,15 @@ class NeatEM(object):
         :return: 
         """
         t_start = datetime.now()
-        create_agents = [pool.apply_async(NeatEM.create_agent, args=(genome, config)) for gid, genome in genomes]
-        agents = [create_agent.get() for create_agent in create_agents]
+        dimension = props.getint('feature', 'dimension')
+        num_actions = props.getint('policy', 'num_actions')
+        # create_agents = [pool.apply_async(NeatEM.create_agent, args=(genome, config)) for gid, genome in genomes]
+        # agents = [create_agent.get() for create_agent in create_agents]
+        agents = []
+        for gid, genome in genomes:
+            net = neat.nn.FeedForwardNetwork.create(genome, config)
+            agent = NeatEMAgent(net, dimension, num_actions)
+            agents.append((genome, agent))
 
         greedy = False
         for i in range(self.iterations):
@@ -192,7 +199,7 @@ class NeatEM(object):
             #     agent.update_value_function(random_indexes, all_state_starts, all_state_ends, all_rewards)
             #     agent.update_policy_function_theano(all_state_starts, all_state_ends, all_actions, all_rewards)
 
-            logger.debug("Updating policy")
+            # logger.debug("Updating policy")
             # update policy functions
             # policy_function_updates = [
             #     pool.apply_async(agent.update_policy_function_theano, args=(all_state_starts, all_state_ends, all_actions, all_rewards))
@@ -372,7 +379,8 @@ if __name__ == '__main__':
                          config_path)
 
     # initialise experiment
-    pool = multiprocessing.Pool()
+    # pool = multiprocessing.Pool()
+    pool = multiprocessing.Pool(processes=props.getint('multiprocess', 'num_processes'))
     experiment = NeatEM(config)
 
     # Run until the winner from a generation is able to solve the environment

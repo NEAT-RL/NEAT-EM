@@ -133,6 +133,14 @@ class NeatEMAgent(object):
         print("{0}. Updated policy parameter. Time taken: {1}".format(datetime.now(),
                                                                       (datetime.now() - t_start).total_seconds()))
 
+    def calculate_agent_fitness(self, start_states, actions):
+        phi = []
+        for i in range(len(start_states)):
+            phi.append(self.feature.phi(start_states[i]))
+
+        self.fitness = float(self.calculate_fitness(phi, actions))
+        return self.fitness
+
     def approximate_d_error_squared(self, index, random_state_transitions, original_policy_parameters):
         delta = 0.01
         # make new policy with original_policy_parameters
