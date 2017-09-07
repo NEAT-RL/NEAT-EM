@@ -4,6 +4,8 @@ import numpy as np
 from datetime import datetime
 from . import Feature
 import math
+import theano
+import theano.tensor as T
 """
 Mountain car
 state = (position, velocity)
@@ -32,7 +34,29 @@ class NeatEMAgent(object):
         self.fitness = 0
         self.gamma = 0.99
         self.max_total_reward = 0.0
-        self.best_policy_parameters = np.zeros(shape=(self.dimension * self.num_actions))
+        self.best_policy_parameters = np.zeros(shape=(self.dimension, self.num_actions))
+
+        self.phi = T.dmatrix('phi')
+        self.action = T.imatrix('action')
+        self.phi_new = T.dmatrix('phi_new')
+        self.reward = T.fvector('reward')
+        self.theta = theano.shared(self.policy.get_policy_parameters(), 'theta')
+        self.omega = theano.shared(self.valueFunction.get_parameter(), 'omega')
+        logpi = T.log(T.batched_dot(T.nnet.softmax(T.dot(self.phi, self.theta)), self.action))
+        td_error = self.reward + T.dot(self.phi_new, self.omega) - T.dot(self.phi, self.omega)
+        logpi_td_error = logpi * td_error
+        logpi_td_error_mean = T.mean(logpi_td_error)
+        # then do derivation to get e
+        e = T.grad(logpi_td_error_mean, self.theta)
+
+        de_squared = T.sum(T.jacobian(T.sqr(e).flatten(), self.theta), axis=0)
+
+        self.delta_policy = theano.function([self.phi, self.phi_new, self.reward, self.action], de_squared)
+
+        fitness_function = T.sum(T.log(T.batched_dot(T.nnet.softmax(T.dot(self.phi, self.theta)), self.action)))
+
+        self.calculate_fitness = theano.function([self.phi, self.action], fitness_function)
+        self.delta_policy = theano.function([self.phi, self.phi_new, self.reward, self.action], de_squared)
 
     @staticmethod
     def __create_discretised_feature(partition_size, state_length, state_lower_bounds, state_upper_bounds):
@@ -65,18 +89,30 @@ class NeatEMAgent(object):
     def get_fitness(self):
         return self.fitness
 
-    def update_value_function(self, state_transitions):
+    def update_value_function(self, indexes, all_start_states, all_end_states, all_rewards):
         delta_omega = np.zeros(self.dimension, dtype=float)
 
-        for state_transition in state_transitions:
-            old_state_features = self.feature.phi(state_transition.get_start_state())
-            new_state_features = self.feature.phi(state_transition.get_end_state())
-            derivative = 2 * (self.valueFunction.get_value(old_state_features) - (state_transition.get_reward() + self.gamma * self.valueFunction.get_value(new_state_features)))
+        for index in indexes:
+            old_state_features = self.feature.phi(all_start_states[index])
+            new_state_features = self.feature.phi(all_end_states[index])
+            derivative = 2 * (self.valueFunction.get_value(old_state_features) - (all_rewards[index] + self.gamma * self.valueFunction.get_value(new_state_features)))
             delta = np.dot(derivative, self.valueFunction.get_parameter())
             delta_omega += delta
 
-        delta_omega /= len(state_transitions)
+        delta_omega /= len(indexes)
         self.valueFunction.update_parameters(delta_omega)
+        self.omega.set_value(self.valueFunction.get_parameter())
+
+    def update_policy_function_theano(self, all_state_starts, all_state_ends, all_actions, all_rewards):
+        phi = []
+        phi_new = []
+        for i in range(len(all_state_starts)):
+            phi.append(self.feature.phi(all_state_starts[i]))
+            phi_new.append(self.feature.phi(all_state_ends[i]))
+
+        delta_policy = self.delta_policy(phi, phi_new, all_rewards, all_actions)
+        self.policy.update_parameters_theano(delta_policy)
+        self.theta.set_value(self.policy.get_policy_parameters())
 
     def update_policy_function(self, random_state_transitions, all_state_transitions):
         """

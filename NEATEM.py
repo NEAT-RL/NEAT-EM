@@ -51,10 +51,13 @@ class StateTransition(object):
 
 class NeatEM(object):
     def __init__(self, config):
+        self.num_actions = props.getint('policy', 'num_actions')
+        self.max_steps = props.getint('train', 'max_steps')
+        self.step_size = props.getint('train', 'step_size')
+        self.iterations = props.getint('train', 'iterations')
         self.num_trajectories = props.getint('trajectory', 'trajectory_size')
         self.best_trajectory_reward = props.getint('trajectory', 'best_trajectory_reward')
         self.experience_replay = props.getint('evaluation', 'experience_replay')
-        self.policy_state_transitions = props.getint('evaluation', 'num_policy_state_transitions')
         self.generation_num = 0
         pop = neat.Population(config)
         self.stats = neat.StatisticsReporter()
@@ -84,7 +87,11 @@ class NeatEM(object):
     def initialise_trajectory():
         max_steps = props.getint('train', 'max_steps')
         step_size = props.getint('train', 'step_size')
-        trajectory = []
+        num_actions = props.getint('policy', 'num_actions')
+        state_starts = []
+        state_ends = []
+        rewards = []
+        actions = []
         state = env.reset()
         terminal_reached = False
         steps = 0
@@ -101,19 +108,32 @@ class NeatEM(object):
                 next_state, reward2, done, info = env.step(action)
                 reward += reward2
 
-            state_transition = StateTransition(state, action, reward, next_state)
-            # insert state transition to the trajectory
-            trajectory.append(state_transition)
+            action_array = np.zeros((num_actions,))
+            action_array[action] = 1
+            state_starts.append(state)
+            state_ends.append(next_state)
+            rewards.append(reward)
+            actions.append(action_array)
+
             total_reward += reward
             state = next_state
             steps += 1
             if done:
                 terminal_reached = True
 
-        return total_reward, uuid.uuid4(), trajectory
+        return total_reward, uuid.uuid4(), state_starts, state_ends, actions, rewards
 
     def execute_algorithm(self, generations):
         self.population.run(self.fitness_function, generations)
+
+    @staticmethod
+    def create_agent(genome, config):
+        dimension = props.getint('feature', 'dimension')
+        num_actions = props.getint('policy', 'num_actions')
+        net = neat.nn.FeedForwardNetwork.create(genome, config)
+        agent = NeatEMAgent(net, dimension,
+                            num_actions)
+        return genome, agent
 
     def fitness_function(self, genomes, config):
         """
@@ -123,30 +143,20 @@ class NeatEM(object):
         :return: 
         """
         t_start = datetime.now()
-        agents = []
-        dimension = props.getint('neuralnet', 'dimension')
-        num_actions = props.getint('policy', 'num_actions')
-        for gid, genome in genomes:
-            net = neat.nn.FeedForwardNetwork.create(genome, config)
-            agent = NeatEMAgent(net, dimension,
-                                num_actions)
-            agents.append((genome, agent))
+        create_agents = [pool.apply_async(NeatEM.create_agent, args=(genome, config)) for gid, genome in genomes]
+        agents = [create_agent.get() for create_agent in create_agents]
 
-        iterations = props.getint('train', 'iterations')
         greedy = False
-        for i in range(iterations):
-
-            # generate new trajectories Using all of the agents. Parallelise this
-            new_trajectories = [pool.apply_async(self.generate_new_trajectory, args=(agent,)) for genome, agent in
-                                agents]
-            results = [new_trajectory.get() for new_trajectory in new_trajectories]
-            self.trajectories += results
+        for i in range(self.iterations):
 
             # strip weak trajectories from trajectory_set
-            self.trajectories = heapq.nlargest(self.num_trajectories, self.trajectories)
+            # self.trajectories = heapq.nlargest(self.num_trajectories, self.trajectories)
+            self.trajectories.sort(reverse=True)
+            worst_trajectories = self.trajectories[int(0.7 * self.num_trajectories):]
+            self.trajectories = self.trajectories[0: int(0.7 * self.num_trajectories)] + [random.choice(worst_trajectories) for x in range(int(0.3 * self.num_trajectories))]
 
-            logger.debug("Worst Trajectory reward: %f", self.trajectories[len(self.trajectories) - 1][0])
-            logger.debug("Best Trajectory reward: %f", self.trajectories[0][0])
+            # logger.debug("Worst Trajectory reward: %f", self.trajectories[len(self.trajectories) - 1][0])
+            # logger.debug("Best Trajectory reward: %f", self.trajectories[0][0])
 
             if not greedy and self.trajectories[0][0] >= self.best_trajectory_reward:
                 # Found the best possible trajectory so now turn policies into greedy one
@@ -154,27 +164,51 @@ class NeatEM(object):
                     agent.policy.is_greedy = True
                 greedy = True
 
-            # Collect set of state transitions
-            state_transitions = set()
-            for j in range(len(self.trajectories)):
-                state_transitions = state_transitions | set(self.trajectories[j][2])
+            all_state_starts = []
+            all_state_ends = []
+            all_rewards = []
+            all_actions = []
 
-            random_state_transitions = random.sample(state_transitions, self.experience_replay) if len(
-                state_transitions) > self.experience_replay else state_transitions
+            for j, (_, _, state_starts, state_ends, actions, rewards) in enumerate(self.trajectories):
+                all_actions += actions
+                all_rewards += rewards
+                all_state_starts += state_starts
+                all_state_ends += state_ends
+
+            len_state_transitions = len(all_state_starts)
+            random_indexes = random.sample(range(0, len_state_transitions),
+                                           self.experience_replay if len_state_transitions > self.experience_replay else len_state_transitions)
 
             # update value function
-            value_function_updates = [pool.apply_async(agent.update_value_function, args=(random_state_transitions,))
+            # value_function_updates = [pool.apply_async(agent.update_value_function, args=(random_indexes, all_state_starts, all_state_ends, all_rewards))
+            #                           for genome, agent in agents]
+            # [update.get() for update in value_function_updates]
+
+            agent_params_updates = [pool.apply_async(NeatEM.update_agent_params, args=(agent, random_indexes, all_state_starts, all_state_ends, all_actions, all_rewards))
                                       for genome, agent in agents]
-            [update.get() for update in value_function_updates]
 
-            # update policy parameters for all agents. How to parallelise this?
-            random_state_transitions = random.sample(state_transitions, self.policy_state_transitions) if len(
-                state_transitions) > self.policy_state_transitions else state_transitions
+            [update.get() for update in agent_params_updates]
+            # for genome, agent in agents:
+            #     agent.update_value_function(random_indexes, all_state_starts, all_state_ends, all_rewards)
+            #     agent.update_policy_function_theano(all_state_starts, all_state_ends, all_actions, all_rewards)
 
-            policy_function_updates = [
-                pool.apply_async(agent.update_policy_function, args=(random_state_transitions, state_transitions,))
-                for genome, agent in agents]
-            [update.get() for update in policy_function_updates]
+            logger.debug("Updating policy")
+            # update policy functions
+            # policy_function_updates = [
+            #     pool.apply_async(agent.update_policy_function_theano, args=(all_state_starts, all_state_ends, all_actions, all_rewards))
+            #     for genome, agent in agents]
+            # [update.get() for update in policy_function_updates]
+
+
+            # generate new trajectories Using all of the agents.
+            num_actions = self.num_actions
+            new_trajectories = [
+                pool.apply_async(self.generate_new_trajectory, args=(agent, num_actions)) for
+                genome, agent
+                in
+                agents]
+            results = [new_trajectory.get() for new_trajectory in new_trajectories]
+            self.trajectories += results
 
         # calculate the fitness of each agent based on the best trajectory
         # after every x iterations. Test the agent - using the best policy parameters of each agent.
@@ -184,13 +218,7 @@ class NeatEM(object):
         best_trajectory = heapq.nlargest(1, self.trajectories)[0]
         best_agent = None
         for genome, agent in agents:
-            best_trajectory_prob = 0
-            total_reward, _, trajectory_state_transitions = best_trajectory
-            for j, state_transition in enumerate(trajectory_state_transitions):
-                # calculate probability of the action where policy action = action
-                state_features = agent.feature.phi(state_transition.get_start_state())
-                _, actions_distribution = agent.get_policy().get_action(state_features)
-                best_trajectory_prob += np.log(actions_distribution[state_transition.get_action()])
+            best_trajectory_prob = agent.calculate_agent_fitness(best_trajectory[2], best_trajectory[4])
 
             genome.fitness = best_trajectory_prob
             agent.fitness = best_trajectory_prob
@@ -198,6 +226,7 @@ class NeatEM(object):
                 best_agent = agent
 
         logger.debug("Best agent fitness: %f", best_agent.fitness)
+        logger.debug("Best Trajectory reward: %f", best_trajectory[0])
         # select agent with the lowest fitness and generate result
         test_best_agent(self.generation_num, best_agent)
 
@@ -205,20 +234,23 @@ class NeatEM(object):
         self.generation_num += 1
 
     @staticmethod
-    def update_value_functions(agent, state_tranisitions):
-        agent.update_value_function(state_tranisitions)
+    def update_agent_params(agent, random_indexes, all_state_starts, all_state_ends, all_actions, all_rewards):
+        agent.update_value_function(random_indexes, all_state_starts, all_state_ends, all_rewards)
+        agent.update_policy_function_theano(all_state_starts, all_state_ends, all_actions, all_rewards)
 
     @staticmethod
-    def generate_new_trajectory(agent):
+    def generate_new_trajectory(agent, num_actions):
         max_steps = props.getint('train', 'max_steps')
         step_size = props.getint('train', 'step_size')
-
+        state_starts = []
+        state_ends = []
+        rewards = []
+        actions = []
         # perform a rollout
         state = env.reset()
         terminal_reached = False
         steps = 0
         total_reward = 0
-        new_trajectory = []
         while not terminal_reached and steps < max_steps:
             # env.render()
             state_features = agent.feature.phi(state)
@@ -233,9 +265,13 @@ class NeatEM(object):
                 next_state, reward2, done, info = env.step(action)
                 reward += reward2
 
-            # insert state transition to the trajectory
-            state_transition = StateTransition(state, action, reward, next_state)
-            new_trajectory.append(state_transition)
+            action_array = np.zeros((num_actions,))
+            action_array[action] = 1
+            state_starts.append(state)
+            state_ends.append(next_state)
+            rewards.append(reward)
+            actions.append(action_array)
+
             total_reward += reward
             state = next_state
             steps += 1
@@ -248,7 +284,7 @@ class NeatEM(object):
             agent.best_policy_parameters = agent.get_policy().get_policy_parameters()
             agent.max_total_reward = total_reward
 
-        return total_reward, uuid.uuid4(), new_trajectory
+        return total_reward, uuid.uuid4(), state_starts, state_ends, actions, rewards
 
 
 def test_best_agent(generation_num, agent):
@@ -268,7 +304,7 @@ def test_best_agent(generation_num, agent):
             if display_game:
                 env.render()
             state_features = agent.feature.phi(state)
-            action, actions_distribution = agent.get_policy().get_action(state_features)
+            action, actions_distribution = agent.get_policy().get_action_theano(state_features)
             state, reward, done, info = env.step(action)
 
             for x in range(step_size - 1):
