@@ -66,7 +66,6 @@ class NeatEM(object):
         self.population = pop
         self.best_agents = []
         self.trajectories = []
-        self.__initialise_trajectories()
 
     def __initialise_trajectories(self):
         """
@@ -77,7 +76,7 @@ class NeatEM(object):
         """
         logger.debug("Creating trajectories for first time...")
         t_start = datetime.now()
-
+        self.trajectories = []
         results = [pool.apply_async(self.initialise_trajectory) for x in range(self.num_trajectories)]
         results = [trajectory.get() for trajectory in results]
         self.trajectories = results
@@ -127,40 +126,41 @@ class NeatEM(object):
         self.population.run(self.fitness_function, generations)
 
     @staticmethod
-    def create_agent(genome, config):
+    def create_agent():
         dimension = props.getint('feature', 'dimension')
         num_actions = props.getint('policy', 'num_actions')
-        net = neat.nn.FeedForwardNetwork.create(genome, config)
-        agent = NeatEMAgent(net, dimension,
+        agent = NeatEMAgent(None, dimension,
                             num_actions)
-        return genome, agent
+        return agent
 
     def fitness_function(self, genomes, config):
         """
         Generate trajectory.
         Insert into Trajectories.
-        Select best trajectory and perform policy update 
-        :return: 
+        Select best trajectory and perform policy update
+        :return:
         """
         t_start = datetime.now()
         dimension = props.getint('feature', 'dimension')
         num_actions = props.getint('policy', 'num_actions')
-        # create_agents = [pool.apply_async(NeatEM.create_agent, args=(genome, config)) for gid, genome in genomes]
-        # agents = [create_agent.get() for create_agent in create_agents]
+        create_agents = [pool.apply_async(NeatEM.create_agent) for i in range(len(genomes))]
+        results = [create_agent.get() for create_agent in create_agents]
         agents = []
-        for gid, genome in genomes:
+        for i, (gid, genome) in enumerate(genomes):
             net = neat.nn.FeedForwardNetwork.create(genome, config)
-            agent = NeatEMAgent(net, dimension, num_actions)
-            agents.append((genome, agent))
+            results[i].create_feature(net)
+            agents.append((genome, results[i]))
 
         greedy = False
+
+        self.__initialise_trajectories()
         for i in range(self.iterations):
 
             # strip weak trajectories from trajectory_set
             # self.trajectories = heapq.nlargest(self.num_trajectories, self.trajectories)
             self.trajectories.sort(reverse=True)
-            worst_trajectories = self.trajectories[int(0.7 * self.num_trajectories):]
-            self.trajectories = self.trajectories[0: int(0.7 * self.num_trajectories)] + [random.choice(worst_trajectories) for x in range(int(0.3 * self.num_trajectories))]
+            worst_trajectories = self.trajectories[int(0.85 * self.num_trajectories):]
+            self.trajectories = self.trajectories[0: int(0.85 * self.num_trajectories)] + [random.choice(worst_trajectories) for x in range(int(0.15 * self.num_trajectories))]
 
             # logger.debug("Worst Trajectory reward: %f", self.trajectories[len(self.trajectories) - 1][0])
             # logger.debug("Best Trajectory reward: %f", self.trajectories[0][0])
@@ -216,6 +216,7 @@ class NeatEM(object):
                 agents]
             results = [new_trajectory.get() for new_trajectory in new_trajectories]
             self.trajectories += results
+            logger.debug("tick")
 
         # calculate the fitness of each agent based on the best trajectory
         # after every x iterations. Test the agent - using the best policy parameters of each agent.
@@ -229,12 +230,13 @@ class NeatEM(object):
 
             genome.fitness = best_trajectory_prob
             agent.fitness = best_trajectory_prob
+            print(agent.best_policy_parameters)
             if best_agent is None or best_agent.fitness > agent.fitness:
                 best_agent = agent
 
         logger.debug("Best agent fitness: %f", best_agent.fitness)
         logger.debug("Best Trajectory reward: %f", best_trajectory[0])
-        # select agent with the lowest fitness and generate result
+        # select agent with the best fitness and generate result
         test_best_agent(self.generation_num, best_agent)
 
         logger.debug("Completed Generation. Time taken: %f", (datetime.now() - t_start).total_seconds())
@@ -303,6 +305,7 @@ def test_best_agent(generation_num, agent):
 
     total_steps = 0.0
     total_rewards = 0.0
+    agent.get_policy().set_policy_parameters(agent.best_policy_parameters)
     for i in range(test_episodes):
         state = env.reset()
         terminal_reached = False
@@ -311,7 +314,7 @@ def test_best_agent(generation_num, agent):
             if display_game:
                 env.render()
             state_features = agent.feature.phi(state)
-            action, actions_distribution = agent.get_policy().get_action_theano(state_features)
+            action, actions_distribution = agent.get_policy().get_action(state_features)
             state, reward, done, info = env.step(action)
 
             for x in range(step_size - 1):

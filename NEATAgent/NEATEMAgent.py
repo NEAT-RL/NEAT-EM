@@ -13,8 +13,8 @@ state = (position, velocity)
         self.max_position = 0.6
         self.max_speed = 0.07
         min speed = -self.max_speed = -0.07
-         
-TODO: 
+
+TODO:
 Add Cartpole settings
 """
 
@@ -57,6 +57,9 @@ class NeatEMAgent(object):
 
         self.calculate_fitness = theano.function([self.phi, self.action], fitness_function)
         self.delta_policy = theano.function([self.phi, self.phi_new, self.reward, self.action], de_squared)
+
+    def create_feature(self, network):
+        self.feature = Feature.NEATFeature(network)
 
     @staticmethod
     def __create_discretised_feature(partition_size, state_length, state_lower_bounds, state_upper_bounds):
@@ -137,7 +140,7 @@ class NeatEMAgent(object):
         phi = []
         for i in range(len(start_states)):
             phi.append(self.feature.phi(start_states[i]))
-
+        self.theta.set_value(self.best_policy_parameters)
         self.fitness = float(self.calculate_fitness(phi, actions))
         return self.fitness
 

@@ -31,7 +31,7 @@ class SoftmaxPolicy(object):
          - Zero vectors
          - Random vectors (capped to [-10, 10] for example)
          - Maximising log likelihood etc
-        :return: 
+        :return:
         """
         self.parameters = np.zeros(shape=(self.num_actions * self.dimension), dtype=float)
         # self.parameters.fill(self.tiny)
