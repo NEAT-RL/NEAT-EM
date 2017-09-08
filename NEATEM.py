@@ -77,9 +77,14 @@ class NeatEM(object):
         logger.debug("Creating trajectories for first time...")
         t_start = datetime.now()
         self.trajectories = []
-        results = [pool.apply_async(self.initialise_trajectory) for x in range(self.num_trajectories)]
-        results = [trajectory.get() for trajectory in results]
-        self.trajectories = results
+        if allow_multiprocessing:
+            results = [pool.apply_async(self.initialise_trajectory) for x in range(self.num_trajectories)]
+            results = [trajectory.get() for trajectory in results]
+            self.trajectories = results
+        else:
+            for x in range(self.num_trajectories):
+                self.trajectories.append(self.initialise_trajectory())
+
         logger.debug("Finished: Creating trajectories. Time taken: %f", (datetime.now() - t_start).total_seconds())
 
     @staticmethod
@@ -141,10 +146,14 @@ class NeatEM(object):
         :return:
         """
         t_start = datetime.now()
-        dimension = props.getint('feature', 'dimension')
-        num_actions = props.getint('policy', 'num_actions')
-        create_agents = [pool.apply_async(NeatEM.create_agent) for i in range(len(genomes))]
-        results = [create_agent.get() for create_agent in create_agents]
+        results = []
+        if allow_multiprocessing:
+            create_agents = [pool.apply_async(NeatEM.create_agent) for i in range(len(genomes))]
+            results = [create_agent.get() for create_agent in create_agents]
+        else:
+            for i in range(len(genomes)):
+                results.append(NeatEM.create_agent())
+
         agents = []
         for i, (gid, genome) in enumerate(genomes):
             net = neat.nn.FeedForwardNetwork.create(genome, config)
@@ -191,10 +200,15 @@ class NeatEM(object):
             #                           for genome, agent in agents]
             # [update.get() for update in value_function_updates]
 
-            agent_params_updates = [pool.apply_async(NeatEM.update_agent_params, args=(agent, random_indexes, all_state_starts, all_state_ends, all_actions, all_rewards))
-                                      for genome, agent in agents]
+            if allow_multiprocessing:
+                agent_params_updates = [pool.apply_async(NeatEM.update_agent_params, args=(agent, random_indexes, all_state_starts, all_state_ends, all_actions, all_rewards))
+                                          for genome, agent in agents]
 
-            [update.get() for update in agent_params_updates]
+                [update.get() for update in agent_params_updates]
+            else:
+                for genome, agent in agents:
+                    NeatEM.update_agent_params(agent, random_indexes, all_state_starts, all_state_ends, all_actions, all_rewards)
+
             # for genome, agent in agents:
             #     agent.update_value_function(random_indexes, all_state_starts, all_state_ends, all_rewards)
             #     agent.update_policy_function_theano(all_state_starts, all_state_ends, all_actions, all_rewards)
@@ -206,16 +220,20 @@ class NeatEM(object):
             #     for genome, agent in agents]
             # [update.get() for update in policy_function_updates]
 
-
             # generate new trajectories Using all of the agents.
             num_actions = self.num_actions
-            new_trajectories = [
-                pool.apply_async(self.generate_new_trajectory, args=(agent, num_actions)) for
-                genome, agent
-                in
-                agents]
-            results = [new_trajectory.get() for new_trajectory in new_trajectories]
-            self.trajectories += results
+            if allow_multiprocessing:
+                new_trajectories = [
+                    pool.apply_async(self.generate_new_trajectory, args=(agent, num_actions)) for
+                    genome, agent
+                    in
+                    agents]
+                results = [new_trajectory.get() for new_trajectory in new_trajectories]
+                self.trajectories += results
+            else:
+                for genome, agent in agents:
+                    self.trajectories.append(self.generate_new_trajectory(agent, num_actions))
+
             logger.debug("tick")
 
         # calculate the fitness of each agent based on the best trajectory
@@ -344,8 +362,10 @@ def test_best_agent(generation_num, agent):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=None)
-    parser.add_argument('env_id', nargs='?', default='CartPole-v0', help='Select the environment to run')
-    parser.add_argument('display', nargs='?', default='false', help='Show display of game. true or false')
+    parser.add_argument('--env_id', nargs='?', default='CartPole-v0', help='Select the environment to run')
+    parser.add_argument('--display', nargs='?', default='false', help='Show display of game. true or false')
+    parser.add_argument('--threads', nargs='?', default='max', help='Show display of game. 0 means no threads')
+
     args = parser.parse_args()
 
     gym.undo_logger_setup()
@@ -365,7 +385,6 @@ if __name__ == '__main__':
     logger.debug("action space: %s", env.action_space)
     logger.debug("observation space: %s", env.observation_space)
 
-
     # load properties file
     local_dir = os.path.dirname(__file__)
     logger.debug("Loading Properties File")
@@ -383,7 +402,19 @@ if __name__ == '__main__':
 
     # initialise experiment
     # pool = multiprocessing.Pool()
-    pool = multiprocessing.Pool(processes=props.getint('multiprocess', 'num_processes'))
+    # max ==> processes = None
+    # 0 ==> no multiprocessing
+    # > 0 ==> use as processes
+    processes = None
+    allow_multiprocessing = True
+    if args.threads == '0':
+        allow_multiprocessing = False
+    elif not args.threads == 'max':
+        processes = int(args.threads)
+
+    print(allow_multiprocessing)
+    if allow_multiprocessing:
+        pool = multiprocessing.Pool(processes=processes)
     experiment = NeatEM(config)
 
     # Run until the winner from a generation is able to solve the environment
@@ -419,7 +450,8 @@ if __name__ == '__main__':
         # save_best_genomes(best_genomes, False)
     finally:
         env.close()
-        pool.terminate()
+        if allow_multiprocessing:
+            pool.terminate()
 
     # Upload to the scoreboard. We could also do this from another
     # logger.info("Successfully ran RandomAgent. Now trying to upload results to the scoreboard. If it breaks, you can always just try re-uploading the same results.")
