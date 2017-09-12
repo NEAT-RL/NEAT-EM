@@ -64,7 +64,6 @@ class NeatEM(object):
         pop.add_reporter(self.stats)
         pop.add_reporter(neat.StdOutReporter(True))
         self.population = pop
-        self.best_agents = []
         self.trajectories = []
 
     def __initialise_trajectories(self):
@@ -76,22 +75,16 @@ class NeatEM(object):
         """
         logger.debug("Creating trajectories for first time...")
         t_start = datetime.now()
-        self.trajectories = []
-        if allow_multiprocessing:
-            results = [pool.apply_async(self.initialise_trajectory) for x in range(self.num_trajectories)]
-            results = [trajectory.get() for trajectory in results]
-            self.trajectories = results
-        else:
-            for x in range(self.num_trajectories):
-                self.trajectories.append(self.initialise_trajectory())
-
+        num_actions = self.num_actions
+        for x in range(self.num_trajectories):
+            self.trajectories.append(NeatEM.initialise_trajectory(num_actions))
+        self.trajectories.sort(reverse=True)
         logger.debug("Finished: Creating trajectories. Time taken: %f", (datetime.now() - t_start).total_seconds())
 
     @staticmethod
-    def initialise_trajectory():
+    def initialise_trajectory(num_actions):
         max_steps = props.getint('train', 'max_steps')
         step_size = props.getint('train', 'step_size')
-        num_actions = props.getint('policy', 'num_actions')
         state_starts = []
         state_ends = []
         rewards = []
@@ -162,14 +155,15 @@ class NeatEM(object):
 
         greedy = False
 
+        self.trajectories = []
         self.__initialise_trajectories()
         for i in range(self.iterations):
 
             # strip weak trajectories from trajectory_set
             # self.trajectories = heapq.nlargest(self.num_trajectories, self.trajectories)
             self.trajectories.sort(reverse=True)
-            worst_trajectories = self.trajectories[int(0.85 * self.num_trajectories):]
-            self.trajectories = self.trajectories[0: int(0.85 * self.num_trajectories)] + [random.choice(worst_trajectories) for x in range(int(0.15 * self.num_trajectories))]
+            worst_trajectories = self.trajectories[int(0.9 * self.num_trajectories):]
+            self.trajectories = self.trajectories[0: int(0.9 * self.num_trajectories)] + [random.choice(worst_trajectories) for x in range(int(0.1 * self.num_trajectories))]
 
             # logger.debug("Worst Trajectory reward: %f", self.trajectories[len(self.trajectories) - 1][0])
             # logger.debug("Best Trajectory reward: %f", self.trajectories[0][0])
@@ -200,14 +194,15 @@ class NeatEM(object):
             #                           for genome, agent in agents]
             # [update.get() for update in value_function_updates]
 
-            if allow_multiprocessing:
-                agent_params_updates = [pool.apply_async(NeatEM.update_agent_params, args=(agent, random_indexes, all_state_starts, all_state_ends, all_actions, all_rewards))
-                                          for genome, agent in agents]
-
-                [update.get() for update in agent_params_updates]
-            else:
-                for genome, agent in agents:
-                    NeatEM.update_agent_params(agent, random_indexes, all_state_starts, all_state_ends, all_actions, all_rewards)
+            # if allow_multiprocessing:
+            #     agent_params_updates = [pool.apply_async(NeatEM.update_agent_params, args=(agent, genome, random_indexes, all_state_starts, all_state_ends, all_actions, all_rewards))
+            #                               for genome, agent in agents]
+            #
+            #     agents = [update.get() for update in agent_params_updates]
+            #     print()
+            # else:
+            for genome, agent in agents:
+                NeatEM.update_agent_params(agent, random_indexes, all_state_starts, all_state_ends, all_actions, all_rewards)
 
             # for genome, agent in agents:
             #     agent.update_value_function(random_indexes, all_state_starts, all_state_ends, all_rewards)
@@ -222,19 +217,10 @@ class NeatEM(object):
 
             # generate new trajectories Using all of the agents.
             num_actions = self.num_actions
-            if allow_multiprocessing:
-                new_trajectories = [
-                    pool.apply_async(self.generate_new_trajectory, args=(agent, num_actions)) for
-                    genome, agent
-                    in
-                    agents]
-                results = [new_trajectory.get() for new_trajectory in new_trajectories]
-                self.trajectories += results
-            else:
-                for genome, agent in agents:
-                    self.trajectories.append(self.generate_new_trajectory(agent, num_actions))
+            for genome, agent in agents:
+                self.trajectories += self.generate_new_trajectory(agent, num_actions)
 
-            logger.debug("tick")
+            logger.debug("tick %d", i)
 
         # calculate the fitness of each agent based on the best trajectory
         # after every x iterations. Test the agent - using the best policy parameters of each agent.
@@ -244,12 +230,10 @@ class NeatEM(object):
         best_trajectory = heapq.nlargest(1, self.trajectories)[0]
         best_agent = None
         for genome, agent in agents:
-            best_trajectory_prob = agent.calculate_agent_fitness(best_trajectory[2], best_trajectory[4])
-
-            genome.fitness = best_trajectory_prob
-            agent.fitness = best_trajectory_prob
-            print(agent.best_policy_parameters)
-            if best_agent is None or best_agent.fitness > agent.fitness:
+            # best_trajectory_prob = agent.calculate_agent_fitness(best_trajectory[2], best_trajectory[4])
+            genome.fitness = agent.best_average_reward
+            agent.fitness = agent.best_average_reward
+            if best_agent is None or best_agent.best_average_reward < agent.best_average_reward:
                 best_agent = agent
 
         logger.debug("Best agent fitness: %f", best_agent.fitness)
@@ -269,49 +253,57 @@ class NeatEM(object):
     def generate_new_trajectory(agent, num_actions):
         max_steps = props.getint('train', 'max_steps')
         step_size = props.getint('train', 'step_size')
-        state_starts = []
-        state_ends = []
-        rewards = []
-        actions = []
-        # perform a rollout
-        state = env.reset()
-        terminal_reached = False
-        steps = 0
-        total_reward = 0
-        while not terminal_reached and steps < max_steps:
-            # env.render()
-            state_features = agent.feature.phi(state)
-            # get recommended action and the action distribution using policy
-            action, actions_distribution = agent.get_policy().get_action(state_features)
-            next_state, reward, done, info = env.step(action)
+        # Repeat x number of times (5 or 10)
+        new_trajectories = []
+        for x in range(5):
+            state_starts = []
+            state_ends = []
+            rewards = []
+            actions = []
+            # perform a rollout
+            state = env.reset()
+            terminal_reached = False
+            steps = 0
+            total_reward = 0
+            while not terminal_reached and steps < max_steps:
+                # env.render()
+                state_features = agent.feature.phi(state)
+                # get recommended action and the action distribution using policy
+                action, actions_distribution = agent.get_policy().get_action(state_features)
+                next_state, reward, done, info = env.step(action)
 
-            for x in range(step_size - 1):
+                for x in range(step_size - 1):
+                    if done:
+                        terminal_reached = True
+                        break
+                    next_state, reward2, done, info = env.step(action)
+                    reward += reward2
+
+                action_array = np.zeros((num_actions,))
+                action_array[action] = 1
+                state_starts.append(state)
+                state_ends.append(next_state)
+                rewards.append(reward)
+                actions.append(action_array)
+
+                total_reward += reward
+                state = next_state
+                steps += 1
                 if done:
                     terminal_reached = True
-                    break
-                next_state, reward2, done, info = env.step(action)
-                reward += reward2
 
-            action_array = np.zeros((num_actions,))
-            action_array[action] = 1
-            state_starts.append(state)
-            state_ends.append(next_state)
-            rewards.append(reward)
-            actions.append(action_array)
+            new_trajectories.append((total_reward, uuid.uuid4(), state_starts, state_ends, actions, rewards))
 
-            total_reward += reward
-            state = next_state
-            steps += 1
-            if done:
-                terminal_reached = True
+        # Calculate the average of new trajectories and if its better then the best average then save policy parameters of agent
+        average_reward = 0
+        for i in range(len(new_trajectories)):
+            average_reward += new_trajectories[i][0]
 
-        # if total_reward > max_total_reward of policy then save policy parameters.
-        if agent.max_total_reward < total_reward:
-            # save policy parameters
-            agent.best_policy_parameters = agent.get_policy().get_policy_parameters()
-            agent.max_total_reward = total_reward
+        average_reward /= len(new_trajectories)
+        if average_reward >= agent.best_average_reward:
+            agent.save_policy_parameters(average_reward)
 
-        return total_reward, uuid.uuid4(), state_starts, state_ends, actions, rewards
+        return new_trajectories
 
 
 def test_best_agent(generation_num, agent):
@@ -364,7 +356,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=None)
     parser.add_argument('--env_id', nargs='?', default='CartPole-v0', help='Select the environment to run')
     parser.add_argument('--display', nargs='?', default='false', help='Show display of game. true or false')
-    parser.add_argument('--threads', nargs='?', default='max', help='Show display of game. 0 means no threads')
+    parser.add_argument('--threads', nargs='?', default='max', help='Number of threads to use. 0 means no threads')
 
     args = parser.parse_args()
 

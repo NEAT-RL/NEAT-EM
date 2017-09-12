@@ -13,7 +13,7 @@ class SoftmaxPolicy(object):
         self.num_actions = num_actions
         self.is_greedy = is_greedy
         self.sigma = 1.0
-        self.default_learning_rate = 0.01
+        self.default_learning_rate = 0.0001
         self.kl_threshold = 0.1
         self.tiny = 1e-8
         self.temperature = 0.5
@@ -41,24 +41,25 @@ class SoftmaxPolicy(object):
 
     def get_action_theano(self, state_feature):
         softmax = T.nnet.softmax(T.dot(state_feature, self.parameters)).eval()[0]
+        return np.argmax(softmax), softmax
 
-        if self.is_greedy:
-            return np.argmax(softmax), softmax
-        else:
-            running_total = 0.0
-            total = np.zeros(shape=self.num_actions)
-            for i, value in enumerate(softmax):
-                running_total += value
-                total[i] = running_total
-
-            rand = random.uniform(0, 1)
-            chosen_policy_index = 0
-            for i in range(len(total)):
-                if total[i] > rand:
-                    chosen_policy_index = i
-                    break
-
-            return chosen_policy_index, softmax
+        # if self.is_greedy:
+        #     return np.argmax(softmax), softmax
+        # else:
+        #     running_total = 0.0
+        #     total = np.zeros(shape=self.num_actions)
+        #     for i, value in enumerate(softmax):
+        #         running_total += value
+        #         total[i] = running_total
+        #
+        #     rand = random.uniform(0, 1)
+        #     chosen_policy_index = 0
+        #     for i in range(len(total)):
+        #         if total[i] > rand:
+        #             chosen_policy_index = i
+        #             break
+        #
+        #     return chosen_policy_index, softmax
 
     def get_action(self, state_feature):
         '''
@@ -82,24 +83,24 @@ class SoftmaxPolicy(object):
             action_probabilities[i] = action_probabilities[i] - max_value
 
         softmax = np.exp(action_probabilities) / np.sum(np.exp(action_probabilities), axis=0)
-
-        if self.is_greedy:
-            return np.argmax(softmax), softmax
-        else:
-            running_total = 0.0
-            total = np.zeros(shape=self.num_actions)
-            for i, value in enumerate(softmax):
-                running_total += value
-                total[i] = running_total
-
-            rand = random.uniform(0, 1)
-            chosen_policy_index = 0
-            for i in range(len(total)):
-                if total[i] > rand:
-                    chosen_policy_index = i
-                    break
-
-            return chosen_policy_index, softmax
+        return np.argmax(softmax), softmax
+        # if self.is_greedy:
+        #     return np.argmax(softmax), softmax
+        # else:
+        #     running_total = 0.0
+        #     total = np.zeros(shape=self.num_actions)
+        #     for i, value in enumerate(softmax):
+        #         running_total += value
+        #         total[i] = running_total
+        #
+        #     rand = random.uniform(0, 1)
+        #     chosen_policy_index = 0
+        #     for i in range(len(total)):
+        #         if total[i] > rand:
+        #             chosen_policy_index = i
+        #             break
+        #
+        #     return chosen_policy_index, softmax
 
     def dlogpi(self, state_feature, action):
         """
@@ -159,8 +160,8 @@ class SoftmaxPolicy(object):
 
         for i in range(len(current_parameters)):
             for j in range(len(current_parameters[i])):
-                new_parameter[i][j] = max(min(current_parameters[i][j] - learning_rate * delta_vector[i][j], 10), -10)
-
+                # new_parameter[i][j] = max(min(current_parameters[i][j] - learning_rate * delta_vector[i][j], 10), -10)
+                new_parameter[i][j] = current_parameters[i][j] - learning_rate * delta_vector[i][j]
         return new_parameter
 
     def avg_kl_divergence(self, state_transitions, new_policy_parameters, old_policy_parameters):

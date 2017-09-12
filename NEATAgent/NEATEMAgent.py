@@ -33,8 +33,8 @@ class NeatEMAgent(object):
         self.policy = SoftmaxPolicy(dimension, num_actions, self.feature)
         self.fitness = 0
         self.gamma = 0.99
-        self.max_total_reward = 0.0
-        self.best_policy_parameters = np.zeros(shape=(self.dimension, self.num_actions))
+        self.best_policy_parameters = None
+        self.best_average_reward = 0
 
         self.phi = T.dmatrix('phi')
         self.action = T.imatrix('action')
@@ -42,10 +42,10 @@ class NeatEMAgent(object):
         self.reward = T.fvector('reward')
         self.theta = theano.shared(self.policy.get_policy_parameters(), 'theta')
         self.omega = theano.shared(self.valueFunction.get_parameter(), 'omega')
-        logpi = T.log(T.batched_dot(T.nnet.softmax(T.dot(self.phi, self.theta)), self.action))
+        logpi = T.log(T.batched_dot(T.nnet.softmax(T.dot(self.phi, self.theta)), self.action) + 1e-20)
         td_error = self.reward + T.dot(self.phi_new, self.omega) - T.dot(self.phi, self.omega)
         logpi_td_error = logpi * td_error
-        logpi_td_error_mean = T.mean(logpi_td_error)
+        logpi_td_error_mean = T.sum(logpi_td_error)
         # then do derivation to get e
         e = T.grad(logpi_td_error_mean, self.theta)
 
@@ -53,7 +53,7 @@ class NeatEMAgent(object):
 
         self.delta_policy = theano.function([self.phi, self.phi_new, self.reward, self.action], de_squared)
 
-        fitness_function = T.sum(T.log(T.batched_dot(T.nnet.softmax(T.dot(self.phi, self.theta)), self.action)))
+        fitness_function = T.sum(T.log(T.batched_dot(T.nnet.softmax(T.dot(self.phi, self.theta)), self.action) + 1e-20))
 
         self.calculate_fitness = theano.function([self.phi, self.action], fitness_function)
         self.delta_policy = theano.function([self.phi, self.phi_new, self.reward, self.action], de_squared)
@@ -91,6 +91,10 @@ class NeatEMAgent(object):
 
     def get_fitness(self):
         return self.fitness
+
+    def save_policy_parameters(self, average_reward):
+        self.best_policy_parameters = self.policy.get_policy_parameters()
+        self.best_average_reward = average_reward
 
     def update_value_function(self, indexes, all_start_states, all_end_states, all_rewards):
         delta_omega = np.zeros(self.dimension, dtype=float)
@@ -140,7 +144,7 @@ class NeatEMAgent(object):
         phi = []
         for i in range(len(start_states)):
             phi.append(self.feature.phi(start_states[i]))
-        self.theta.set_value(self.best_policy_parameters)
+
         self.fitness = float(self.calculate_fitness(phi, actions))
         return self.fitness
 
