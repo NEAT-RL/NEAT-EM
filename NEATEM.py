@@ -201,7 +201,6 @@ class NeatEM(object):
                                           for agent in agents]
 
                 agents = [update.get() for update in agent_params_updates]
-                print()
             else:
                 for agent in agents:
                     NeatEM.update_agent_params(agent, random_indexes, all_state_starts, all_state_ends, all_actions, all_rewards)
