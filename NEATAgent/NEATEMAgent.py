@@ -20,7 +20,8 @@ Add Cartpole settings
 
 
 class NeatEMAgent(object):
-    def __init__(self, network, dimension, num_actions):
+    def __init__(self, network, genome_id, dimension, num_actions):
+        self.genome_id = genome_id
         self.num_actions = num_actions
         self.dimension = dimension
         # Neat
@@ -58,8 +59,9 @@ class NeatEMAgent(object):
         self.calculate_fitness = theano.function([self.phi, self.action], fitness_function)
         self.delta_policy = theano.function([self.phi, self.phi_new, self.reward, self.action], de_squared)
 
-    def create_feature(self, network):
+    def create_feature(self, network, genome_id):
         self.feature = Feature.NEATFeature(network)
+        self.genome_id = genome_id
 
     @staticmethod
     def __create_discretised_feature(partition_size, state_length, state_lower_bounds, state_upper_bounds):

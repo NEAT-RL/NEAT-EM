@@ -127,7 +127,7 @@ class NeatEM(object):
     def create_agent():
         dimension = props.getint('feature', 'dimension')
         num_actions = props.getint('policy', 'num_actions')
-        agent = NeatEMAgent(None, dimension,
+        agent = NeatEMAgent(None, None, dimension,
                             num_actions)
         return agent
 
@@ -148,10 +148,12 @@ class NeatEM(object):
                 results.append(NeatEM.create_agent())
 
         agents = []
+        genome_dict = {}
         for i, (gid, genome) in enumerate(genomes):
+            genome_dict[gid] = genome
             net = neat.nn.FeedForwardNetwork.create(genome, config)
-            results[i].create_feature(net)
-            agents.append((genome, results[i]))
+            results[i].create_feature(net, gid)
+            agents.append(results[i])
 
         greedy = False
 
@@ -170,7 +172,7 @@ class NeatEM(object):
 
             if not greedy and self.trajectories[0][0] >= self.best_trajectory_reward:
                 # Found the best possible trajectory so now turn policies into greedy one
-                for genome, agent in agents:
+                for agent in agents:
                     agent.policy.is_greedy = True
                 greedy = True
 
@@ -194,15 +196,15 @@ class NeatEM(object):
             #                           for genome, agent in agents]
             # [update.get() for update in value_function_updates]
 
-            # if allow_multiprocessing:
-            #     agent_params_updates = [pool.apply_async(NeatEM.update_agent_params, args=(agent, genome, random_indexes, all_state_starts, all_state_ends, all_actions, all_rewards))
-            #                               for genome, agent in agents]
-            #
-            #     agents = [update.get() for update in agent_params_updates]
-            #     print()
-            # else:
-            for genome, agent in agents:
-                NeatEM.update_agent_params(agent, random_indexes, all_state_starts, all_state_ends, all_actions, all_rewards)
+            if allow_multiprocessing:
+                agent_params_updates = [pool.apply_async(NeatEM.update_agent_params, args=(agent, random_indexes, all_state_starts, all_state_ends, all_actions, all_rewards))
+                                          for agent in agents]
+
+                agents = [update.get() for update in agent_params_updates]
+                print()
+            else:
+                for agent in agents:
+                    NeatEM.update_agent_params(agent, random_indexes, all_state_starts, all_state_ends, all_actions, all_rewards)
 
             # for genome, agent in agents:
             #     agent.update_value_function(random_indexes, all_state_starts, all_state_ends, all_rewards)
@@ -217,7 +219,7 @@ class NeatEM(object):
 
             # generate new trajectories Using all of the agents.
             num_actions = self.num_actions
-            for genome, agent in agents:
+            for agent in agents:
                 self.trajectories += self.generate_new_trajectory(agent, num_actions)
 
             logger.debug("tick %d", i)
@@ -229,9 +231,9 @@ class NeatEM(object):
 
         best_trajectory = heapq.nlargest(1, self.trajectories)[0]
         best_agent = None
-        for genome, agent in agents:
+        for agent in agents:
             # best_trajectory_prob = agent.calculate_agent_fitness(best_trajectory[2], best_trajectory[4])
-            genome.fitness = agent.best_average_reward
+            genome_dict[agent.genome_id].fitness = agent.best_average_reward
             agent.fitness = agent.best_average_reward
             if best_agent is None or best_agent.best_average_reward < agent.best_average_reward:
                 best_agent = agent
@@ -248,6 +250,7 @@ class NeatEM(object):
     def update_agent_params(agent, random_indexes, all_state_starts, all_state_ends, all_actions, all_rewards):
         agent.update_value_function(random_indexes, all_state_starts, all_state_ends, all_rewards)
         agent.update_policy_function_theano(all_state_starts, all_state_ends, all_actions, all_rewards)
+        return agent
 
     @staticmethod
     def generate_new_trajectory(agent, num_actions):
