@@ -13,7 +13,7 @@ class SoftmaxPolicy(object):
         self.num_actions = num_actions
         self.is_greedy = is_greedy
         self.sigma = 1.0
-        self.default_learning_rate = 0.0001
+        self.default_learning_rate = 0.001
         self.kl_threshold = 0.1
         self.tiny = 1e-8
         self.temperature = 0.5
@@ -74,13 +74,8 @@ class SoftmaxPolicy(object):
         action_probabilities = []
         policy_parameters = np.transpose(self.parameters)
         for i, parameter in enumerate(policy_parameters):
-            mu = np.dot(state_feature, parameter)
+            mu = np.dot(state_feature, parameter) / 0.01
             action_probabilities.append(mu)
-
-        # subtract the largest value of actions to avoid erroring out when trying to find exp(value)
-        max_value = action_probabilities[np.argmax(action_probabilities)]
-        for i in range(len(action_probabilities)):
-            action_probabilities[i] = action_probabilities[i] - max_value
 
         softmax = np.exp(action_probabilities) / np.sum(np.exp(action_probabilities), axis=0)
         return np.argmax(softmax), softmax
@@ -153,15 +148,10 @@ class SoftmaxPolicy(object):
         #                                                                 learning_rate=learning_rate)
 
     def __calculate_new_parameters(self, current_parameters, delta_vector, learning_rate=None):
-        new_parameter = np.zeros(shape=(self.dimension, self.num_actions), dtype=float)
-
         if learning_rate is None:
             learning_rate = self.default_learning_rate
 
-        for i in range(len(current_parameters)):
-            for j in range(len(current_parameters[i])):
-                # new_parameter[i][j] = max(min(current_parameters[i][j] - learning_rate * delta_vector[i][j], 10), -10)
-                new_parameter[i][j] = current_parameters[i][j] - learning_rate * delta_vector[i][j]
+        new_parameter = current_parameters - learning_rate * delta_vector
         return new_parameter
 
     def avg_kl_divergence(self, state_transitions, new_policy_parameters, old_policy_parameters):
