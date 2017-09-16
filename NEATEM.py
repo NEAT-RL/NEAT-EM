@@ -56,7 +56,6 @@ class NeatEM(object):
         self.step_size = props.getint('train', 'step_size')
         self.iterations = props.getint('train', 'iterations')
         self.num_trajectories = props.getint('trajectory', 'trajectory_size')
-        self.best_trajectory_reward = props.getint('trajectory', 'best_trajectory_reward')
         self.experience_replay = props.getint('evaluation', 'experience_replay')
         self.generation_num = 0
         pop = neat.Population(config)
@@ -65,6 +64,7 @@ class NeatEM(object):
         pop.add_reporter(neat.StdOutReporter(True))
         self.population = pop
         self.trajectories = []
+        self.__initialise_trajectories()
 
     def __initialise_trajectories(self):
         """
@@ -157,24 +157,24 @@ class NeatEM(object):
 
         greedy = False
 
-        self.trajectories = []
-        self.__initialise_trajectories()
+        # self.trajectories = []
+        # self.__initialise_trajectories()
         for i in range(self.iterations):
 
             # strip weak trajectories from trajectory_set
-            # self.trajectories = heapq.nlargest(self.num_trajectories, self.trajectories)
-            self.trajectories.sort(reverse=True)
-            worst_trajectories = self.trajectories[int(0.9 * self.num_trajectories):]
-            self.trajectories = self.trajectories[0: int(0.9 * self.num_trajectories)] + [random.choice(worst_trajectories) for x in range(int(0.1 * self.num_trajectories))]
+            self.trajectories = heapq.nlargest(self.num_trajectories, self.trajectories)
+            # self.trajectories.sort(reverse=True)
+            # worst_trajectories = self.trajectories[int(0.9 * self.num_trajectories):]
+            # self.trajectories = self.trajectories[0: int(0.9 * self.num_trajectories)] + [random.choice(worst_trajectories) for x in range(int(0.1 * self.num_trajectories))]
 
-            # logger.debug("Worst Trajectory reward: %f", self.trajectories[len(self.trajectories) - 1][0])
+            logger.debug("Worst Trajectory reward: %f", self.trajectories[len(self.trajectories) - 1][0])
             # logger.debug("Best Trajectory reward: %f", self.trajectories[0][0])
 
-            if not greedy and self.trajectories[0][0] >= self.best_trajectory_reward:
-                # Found the best possible trajectory so now turn policies into greedy one
-                for agent in agents:
-                    agent.policy.is_greedy = True
-                greedy = True
+            # if not greedy and self.trajectories[0][0] >= self.best_trajectory_reward:
+            #     # Found the best possible trajectory so now turn policies into greedy one
+            #     for agent in agents:
+            #         agent.policy.is_greedy = True
+            #     greedy = True
 
             all_state_starts = []
             all_state_ends = []
@@ -216,10 +216,26 @@ class NeatEM(object):
             #     for genome, agent in agents]
             # [update.get() for update in policy_function_updates]
 
-            # generate new trajectories Using all of the agents.
-            num_actions = self.num_actions
+            # generate 2 new trajectories using the best agent
+            best_trajectories = self.trajectories[:5]
+            best_start_states = []
+            best_actions = []
+
+            for k, (_, _, state_starts, state_ends, actions, rewards) in enumerate(best_trajectories):
+                best_start_states += state_starts
+                best_actions += actions
+
+            best_agent = None
             for agent in agents:
-                self.trajectories += self.generate_new_trajectory(agent, num_actions)
+                best_trajectory_prob = agent.calculate_agent_fitness(best_start_states, best_actions)
+                agent.fitness = best_trajectory_prob
+                if best_agent is None or best_agent.fitness < agent.fitness:
+                    best_agent = agent
+
+            num_actions = self.num_actions
+
+            for j in range(2):
+                self.trajectories += self.generate_new_trajectory(best_agent, num_actions)
 
             logger.debug("tick %d", i)
 
@@ -228,17 +244,32 @@ class NeatEM(object):
         # now assign fitness to each individual/genome
         # fitness is the log prob of following the best trajectory
 
-        best_trajectory = heapq.nlargest(1, self.trajectories)[0]
+        # best_trajectory = heapq.nlargest(1, self.trajectories)[0]
+        # best_agent = None
+        # for agent in agents:
+        #     # best_trajectory_prob = agent.calculate_agent_fitness(best_trajectory[2], best_trajectory[4])
+        #     genome_dict[agent.genome_id].fitness = agent.best_average_reward
+        #     agent.fitness = agent.best_average_reward
+        #     if best_agent is None or best_agent.best_average_reward < agent.best_average_reward:
+        #         best_agent = agent
+        #
+
+        best_trajectories = self.trajectories[:5]
+        best_start_states = []
+        best_actions = []
+
+        for i, (_, _, state_starts, state_ends, actions, rewards) in enumerate(best_trajectories):
+            best_start_states += state_starts
+            best_actions += actions
+
         best_agent = None
         for agent in agents:
-            # best_trajectory_prob = agent.calculate_agent_fitness(best_trajectory[2], best_trajectory[4])
-            genome_dict[agent.genome_id].fitness = agent.best_average_reward
-            agent.fitness = agent.best_average_reward
-            if best_agent is None or best_agent.best_average_reward < agent.best_average_reward:
+            best_trajectory_prob = agent.calculate_agent_fitness(best_start_states, best_actions)
+            agent.fitness = best_trajectory_prob
+            genome_dict[agent.genome_id].fitness = best_trajectory_prob
+            if best_agent is None or best_agent.fitness < agent.fitness:
                 best_agent = agent
 
-        logger.debug("Best agent fitness: %f", best_agent.fitness)
-        logger.debug("Best Trajectory reward: %f", best_trajectory[0])
         # select agent with the best fitness and generate result
         test_best_agent(self.generation_num, best_agent)
 
@@ -297,13 +328,13 @@ class NeatEM(object):
             new_trajectories.append((total_reward, uuid.uuid4(), state_starts, state_ends, actions, rewards))
 
         # Calculate the average of new trajectories and if its better then the best average then save policy parameters of agent
-        average_reward = 0
-        for i in range(len(new_trajectories)):
-            average_reward += new_trajectories[i][0]
-
-        average_reward /= len(new_trajectories)
-        if average_reward >= agent.best_average_reward:
-            agent.save_policy_parameters(average_reward)
+        # average_reward = 0
+        # for i in range(len(new_trajectories)):
+        #     average_reward += new_trajectories[i][0]
+        #
+        # average_reward /= len(new_trajectories)
+        # if average_reward >= agent.best_average_reward:
+        #     agent.save_policy_parameters(average_reward)
 
         return new_trajectories
 
@@ -317,7 +348,7 @@ def test_best_agent(generation_num, agent):
 
     total_steps = 0.0
     total_rewards = 0.0
-    agent.get_policy().set_policy_parameters(agent.best_policy_parameters)
+    # agent.get_policy().set_policy_parameters(agent.best_policy_parameters)
     for i in range(test_episodes):
         state = env.reset()
         terminal_reached = False
