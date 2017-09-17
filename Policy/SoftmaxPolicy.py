@@ -13,7 +13,7 @@ class SoftmaxPolicy(object):
         self.num_actions = num_actions
         self.is_greedy = is_greedy
         self.sigma = 1.0
-        self.default_learning_rate = 0.001
+        self.default_learning_rate = 0.0001
         self.kl_threshold = 0.1
         self.tiny = 1e-8
         self.temperature = 0.5
@@ -79,23 +79,25 @@ class SoftmaxPolicy(object):
 
         softmax = np.exp(action_probabilities) / np.sum(np.exp(action_probabilities), axis=0)
         return np.argmax(softmax), softmax
-        # if self.is_greedy:
-        #     return np.argmax(softmax), softmax
-        # else:
-        #     running_total = 0.0
-        #     total = np.zeros(shape=self.num_actions)
-        #     for i, value in enumerate(softmax):
-        #         running_total += value
-        #         total[i] = running_total
-        #
-        #     rand = random.uniform(0, 1)
-        #     chosen_policy_index = 0
-        #     for i in range(len(total)):
-        #         if total[i] > rand:
-        #             chosen_policy_index = i
-        #             break
-        #
-        #     return chosen_policy_index, softmax
+        '''
+        if self.is_greedy:
+            return np.argmax(softmax), softmax
+        else:
+            running_total = 0.0
+            total = np.zeros(shape=self.num_actions)
+            for i, value in enumerate(softmax):
+                running_total += value
+                total[i] = running_total
+
+            rand = random.uniform(0, 1)
+            chosen_policy_index = 0
+            for i in range(len(total)):
+                if total[i] > rand:
+                    chosen_policy_index = i
+                    break
+
+            return chosen_policy_index, softmax
+        '''
 
     def dlogpi(self, state_feature, action):
         """

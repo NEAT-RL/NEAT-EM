@@ -20,35 +20,6 @@ from datetime import datetime
 import csv
 
 
-class StateTransition(object):
-    def __init__(self, start_state, action, reward, end_state):
-        self.start_state = start_state
-        self.action = action
-        self.reward = reward
-        self.end_state = end_state
-
-    def __hash__(self):
-        return hash(str(np.concatenate((self.start_state, self.end_state))))
-
-    def __eq__(self, other):
-        return np.array_equal(self.start_state, other.start_state) and np.array_equal(self.end_state, other.end_state)
-
-    def get_start_state(self):
-        return self.start_state
-
-    def get_end_state(self):
-        return self.end_state
-
-    def get_action(self):
-        return self.action
-
-    def get_reward(self):
-        return self.reward
-
-    def get_tuple(self):
-        return self.start_state, self.action, self.reward, self.end_state
-
-
 class NeatEM(object):
     def __init__(self, config):
         self.num_actions = props.getint('policy', 'num_actions')
@@ -58,6 +29,7 @@ class NeatEM(object):
         self.num_trajectories = props.getint('trajectory', 'trajectory_size')
         self.experience_replay = props.getint('evaluation', 'experience_replay')
         self.generation_num = 0
+        # Initialise the neat population and configurations
         pop = neat.Population(config)
         self.stats = neat.StatisticsReporter()
         pop.add_reporter(self.stats)
@@ -168,7 +140,7 @@ class NeatEM(object):
             # self.trajectories = self.trajectories[0: int(0.9 * self.num_trajectories)] + [random.choice(worst_trajectories) for x in range(int(0.1 * self.num_trajectories))]
 
             logger.debug("Worst Trajectory reward: %f", self.trajectories[len(self.trajectories) - 1][0])
-            # logger.debug("Best Trajectory reward: %f", self.trajectories[0][0])
+            logger.debug("Best Trajectory reward: %f", self.trajectories[0][0])
 
             # if not greedy and self.trajectories[0][0] >= self.best_trajectory_reward:
             #     # Found the best possible trajectory so now turn policies into greedy one
@@ -234,8 +206,7 @@ class NeatEM(object):
 
             num_actions = self.num_actions
 
-            for j in range(2):
-                self.trajectories += self.generate_new_trajectory(best_agent, num_actions)
+            self.trajectories += self.generate_new_trajectory(best_agent, num_actions)
 
             logger.debug("tick %d", i)
 
@@ -243,16 +214,6 @@ class NeatEM(object):
         # after every x iterations. Test the agent - using the best policy parameters of each agent.
         # now assign fitness to each individual/genome
         # fitness is the log prob of following the best trajectory
-
-        # best_trajectory = heapq.nlargest(1, self.trajectories)[0]
-        # best_agent = None
-        # for agent in agents:
-        #     # best_trajectory_prob = agent.calculate_agent_fitness(best_trajectory[2], best_trajectory[4])
-        #     genome_dict[agent.genome_id].fitness = agent.best_average_reward
-        #     agent.fitness = agent.best_average_reward
-        #     if best_agent is None or best_agent.best_average_reward < agent.best_average_reward:
-        #         best_agent = agent
-        #
 
         best_trajectories = self.trajectories[:5]
         best_start_states = []
@@ -272,9 +233,9 @@ class NeatEM(object):
 
         # select agent with the best fitness and generate result
         test_best_agent(self.generation_num, best_agent)
+        self.generation_num += 1
 
         logger.debug("Completed Generation. Time taken: %f", (datetime.now() - t_start).total_seconds())
-        self.generation_num += 1
 
     @staticmethod
     def update_agent_params(agent, random_indexes, all_state_starts, all_state_ends, all_actions, all_rewards):
@@ -288,7 +249,7 @@ class NeatEM(object):
         step_size = props.getint('train', 'step_size')
         # Repeat x number of times (5 or 10)
         new_trajectories = []
-        for x in range(5):
+        for x in range(2):
             state_starts = []
             state_ends = []
             rewards = []
@@ -359,19 +320,19 @@ def test_best_agent(generation_num, agent):
             state_features = agent.feature.phi(state)
             action, actions_distribution = agent.get_policy().get_action(state_features)
             state, reward, done, info = env.step(action)
+            total_rewards += rewards
 
             for x in range(step_size - 1):
                 if done:
                     terminal_reached = True
                     break
-                state, reward2, done, info = env.step(action)
-                reward += reward2
-
-            total_rewards += reward
+                state, reward, done, info = env.step(action)
+                total_rewards += reward
 
             steps += 1
             if done:
                 terminal_reached = True
+
         total_steps += steps
     average_steps_per_episodes = total_steps / test_episodes
     average_rewards_per_episodes = total_rewards / test_episodes
@@ -446,7 +407,7 @@ if __name__ == '__main__':
     # or the user interrupts the process.
     display_game = True if args.display == 'true' else False
     try:
-        # Run for 5 generations
+        # Run for X generations
         experiment.execute_algorithm(props.getint('neuralnet', 'generation'))
 
         # Generate test results

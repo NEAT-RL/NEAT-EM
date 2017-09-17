@@ -4,7 +4,7 @@
 
 
 [NEAT]
-pop_size              = 60
+pop_size              = 100
 # Note: the fitness threshold will never be reached because
 # we are controlling the termination ourselves based on simulation performance.
 fitness_criterion     = max

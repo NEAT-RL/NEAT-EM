@@ -1,7 +1,6 @@
 from ValueFunction.ValueFunction import ValueFunction
 from Policy.SoftmaxPolicy import SoftmaxPolicy
 import numpy as np
-from datetime import datetime
 from . import Feature
 import math
 import theano
@@ -40,7 +39,7 @@ class NeatEMAgent(object):
         self.phi = T.dmatrix('phi')
         self.action = T.imatrix('action')
         self.phi_new = T.dmatrix('phi_new')
-        self.reward = T.fvector('reward')
+        self.reward = T.dvector('reward')
         self.theta = theano.shared(self.policy.get_policy_parameters(), 'theta')
         self.omega = theano.shared(self.valueFunction.get_parameter(), 'omega')
         logpi = T.log(T.batched_dot(T.nnet.softmax(T.dot(self.phi, self.theta)), self.action) + 1e-20)
