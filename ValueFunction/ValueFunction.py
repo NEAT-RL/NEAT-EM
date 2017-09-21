@@ -15,5 +15,4 @@ class ValueFunction(object):
         return np.copy(self.parameters)
 
     def update_parameters(self, delta):
-        for i, param in enumerate(self.parameters):
-            self.parameters[i] = param - self.beta * delta[i]
+        self.parameters = self.parameters - self.beta * delta
