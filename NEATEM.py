@@ -98,7 +98,7 @@ class NeatEM(object):
         self.population.run(self.execute_generation, generations)
 
     def execute_generation(self, genomes, config):
-        # Firstly initialise the agents using the genomes:
+        # Firstly, initialise the agents and their theano equations. Because this is slower, we do this in parallel
         t_start = datetime.now()
         results = []
         if allow_multiprocessing:
@@ -107,7 +107,7 @@ class NeatEM(object):
         else:
             for i in range(len(genomes)):
                 results.append(NeatEM.create_agent())
-
+        # Second, add network as feature and genome id
         agents = []
         genome_dict = {}
         for i, (gid, genome) in enumerate(genomes):
@@ -116,16 +116,15 @@ class NeatEM(object):
             results[i].create_feature(net, gid)
             agents.append(results[i])
 
-        # Learn the policy parameters:
+        # Thirdly, Learn the policy parameters:
         for i in range(self.iterations):
             logger.debug("Running iteration: %d", i)
             self.fitness_function(agents)
             if i % (50 - 2) == 0:
+                # Sleep for testing the values etc.
                 sleep(10)
 
-            # Find the agent with the best fitness and use that agent to generate new trajectories
-
-        # calculate the fitness of each agent based on the best trajectories
+        # Fourth, calculate the fitness of each agent based on the best trajectories
 
         best_trajectories = heapq.nlargest(5, self.trajectories)
         best_start_states = []
@@ -139,7 +138,7 @@ class NeatEM(object):
         for agent in agents:
             best_trajectory_prob = agent.calculate_agent_fitness(best_start_states, best_actions)
             agent.fitness = best_trajectory_prob
-            print(best_trajectory_prob)
+            logger.debug("Best trajectory fitness: %f", best_trajectory_prob)
             genome_dict[agent.genome_id].fitness = best_trajectory_prob
             if best_agent is None or best_agent.fitness < agent.fitness:
                 best_agent = agent
@@ -150,7 +149,6 @@ class NeatEM(object):
 
         logger.debug("Completed Generation. Time taken: %f", (datetime.now() - t_start).total_seconds())
 
-        # get the best agent for testing. Can use importance sampling to get the agent with the best chance of producing high rewards
 
     @staticmethod
     def create_agent():
@@ -179,8 +177,7 @@ class NeatEM(object):
             all_state_ends += state_ends
 
         len_state_transitions = len(all_state_starts)
-        random_indexes = random.sample(range(0, len_state_transitions),
-                                       self.experience_replay if len_state_transitions > self.experience_replay else len_state_transitions)
+        random_indexes = random.sample(range(0, len_state_transitions), self.experience_replay if len_state_transitions > self.experience_replay else len_state_transitions)
 
         if allow_multiprocessing:
             agent_params_updates = [pool.apply_async(NeatEM.update_agent_params, args=(agent, random_indexes, all_state_starts, all_state_ends, all_actions, all_rewards))
@@ -346,7 +343,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=None)
     parser.add_argument('--env_id', nargs='?', default='CartPole-v0', help='Select the environment to run')
     parser.add_argument('--display', nargs='?', default='false', help='Show display of game. true or false')
-    parser.add_argument('--threads', nargs='?', default='max', help='Number of threads to use. 0 means no threads')
+    parser.add_argument('--threads', nargs='?', default='0', help='Number of threads to use. 0 means no threads')
 
     args = parser.parse_args()
 

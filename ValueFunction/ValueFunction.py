@@ -5,7 +5,7 @@ class ValueFunction(object):
     def __init__(self, dimension):
         self.dimension = dimension
         self.parameters = np.zeros(dimension, dtype=float)
-        self.parameters.fill(1e-8)  # do not use zero vector
+        # self.parameters.fill(1e-8)  # do not use zero vector
         self.beta = 0.1
 
     def get_value(self, state_feature):
@@ -15,4 +15,4 @@ class ValueFunction(object):
         return np.copy(self.parameters)
 
     def update_parameters(self, delta):
-        self.parameters = self.parameters - self.beta * delta
+        self.parameters = self.parameters + self.beta * delta

@@ -6,6 +6,8 @@ import math
 import theano
 import theano.tensor as T
 import datetime
+import logging
+logger = logging.getLogger()
 """
 Mountain car
 state = (position, velocity)
@@ -25,11 +27,15 @@ class NeatEMAgent(object):
         self.num_actions = num_actions
         self.dimension = dimension
         # Neat
-        self.feature = Feature.NEATFeature(network)
+        self.feature = None
+        if network:
+            self.feature = Feature.NEATFeature(network)
+
         self.valueFunction = ValueFunction(dimension)
         self.policy = SoftmaxPolicy(dimension, num_actions, self.feature)
         self.fitness = 0
         self.gamma = 0.99
+        self.alpha = 0.1
 
         self.phi = T.dmatrix('phi')
         self.action = T.imatrix('action')
@@ -37,52 +43,35 @@ class NeatEMAgent(object):
         self.reward = T.dvector('reward')
         self.theta = theano.shared(self.policy.get_policy_parameters(), 'theta')
         self.omega = theano.shared(self.valueFunction.get_parameter(), 'omega')
-        logpi = T.log(T.batched_dot(T.nnet.softmax(T.dot(self.phi, self.theta)), self.action) + 1e-20)
+        logpi = T.log(T.batched_dot(T.nnet.softmax(T.dot(self.phi, self.theta) / self.policy.temperature ), self.action) + 1e-8)
         td_error = self.reward + self.gamma * T.dot(self.phi_new, self.omega) - T.dot(self.phi, self.omega)
         logpi_td_error = logpi * td_error
         logpi_td_error_mean = T.mean(logpi_td_error)
         # then do derivation to get e
         e = T.grad(logpi_td_error_mean, self.theta)
+        self.error = theano.function([self.phi, self.phi_new, self.reward, self.action], e)
 
-        de_squared = T.sum(T.jacobian(T.sqr(e).flatten(), self.theta), axis=0)
-
+        de_squared = T.grad(T.sum(T.flatten(T.sqr(e))), self.theta)
         self.delta_policy = theano.function([self.phi, self.phi_new, self.reward, self.action], de_squared)
 
-        fitness_function = T.sum(T.log(T.batched_dot(T.nnet.softmax(T.dot(self.phi, self.theta)), self.action) + 1e-20))
+        fitness_function = T.sum(T.log(T.batched_dot(T.nnet.softmax(T.dot(self.phi, self.theta) / self.policy.temperature ), self.action) + 1e-8))
 
         self.calculate_fitness = theano.function([self.phi, self.action], fitness_function)
-        self.delta_policy = theano.function([self.phi, self.phi_new, self.reward, self.action], de_squared)
 
         # MSE for value function
-        derivative_mse = T.grad(
-            T.mean((T.dot(self.phi, self.omega) - (self.reward + self.gamma * T.dot(self.phi_new, self.omega))) ** 2),
-            self.omega)
-        self.mse_value_function = theano.function([self.phi, self.phi_new, self.reward], derivative_mse)
+        # omega_update = T.grad(
+        #     T.mean((T.dot(self.phi, self.omega) - (self.reward + self.gamma * T.dot(self.phi_new, self.omega))) ** 2),
+        #     self.omega)
+
+        omega_update = T.mean(T.batched_dot(td_error, self.phi), axis=0)
+        self.delta_omega = theano.function([self.phi, self.phi_new, self.reward], omega_update)
 
         self.td_error_function = theano.function([self.phi, self.phi_new, self.reward], td_error)
 
     def create_feature(self, network, genome_id):
         self.feature = Feature.NEATFeature(network)
+        self.policy.feature = self.feature
         self.genome_id = genome_id
-
-    @staticmethod
-    def __create_discretised_feature(partition_size, state_length, state_lower_bounds, state_upper_bounds):
-        """
-        :param partition_size: Array of partition_sizes for each state field
-        :param state_length: Number of states == input dimension (state)
-        :param state_lower_bounds: array of lower bounds for each state field
-        :param state_upper_bounds: array of upper bounds for each state field
-        :return: discretised feature
-        """
-        intervals = []
-        output_dimension = 0
-
-        for i in range(state_length):
-            output_dimension += partition_size[i]
-            state_col = Feature.DiscretizedFeature.create_partition(state_lower_bounds[i],
-                                                                    state_upper_bounds[i], partition_size[i])
-            intervals.append(state_col)
-        return Feature.DiscretizedFeature(state_length, output_dimension, intervals)
 
     def get_feature(self):
         return self.feature
@@ -96,18 +85,12 @@ class NeatEMAgent(object):
     def get_fitness(self):
         return self.fitness
 
-    def save_policy_parameters(self, average_reward):
-        self.best_policy_parameters = self.policy.get_policy_parameters()
-        self.best_average_reward = average_reward
-
     def update_value_function(self, all_start_states, all_end_states, all_rewards):
         delta_omega = np.zeros(self.dimension, dtype=float)
 
         for i in range(len(all_start_states)):
             derivative = 2 * (self.valueFunction.get_value(all_start_states[i]) - (all_rewards[i] + self.gamma * self.valueFunction.get_value(all_end_states[i])))
-            # delta = np.dot(derivative, (np.asarray(all_start_states[i]) - self.gamma * np.asarray(all_end_states[i])))
-            delta = np.dot(derivative, np.asarray(all_start_states[i]))
-            # delta = np.dot(derivative, self.valueFunction.get_parameter())
+            delta = np.dot(derivative, (np.asarray(all_start_states[i]) - self.gamma * np.asarray(all_end_states[i])))
             delta_omega += delta
 
         delta_omega /= len(all_start_states)
@@ -115,14 +98,16 @@ class NeatEMAgent(object):
         self.omega.set_value(self.valueFunction.get_parameter())
 
     def update_value_function_theano(self, start_states, end_states, rewards):
-        delta = self.mse_value_function(start_states, end_states, rewards)
+        delta = self.delta_omega(start_states, end_states, rewards)
         # print(delta)
         self.valueFunction.update_parameters(delta)
         self.omega.set_value(self.valueFunction.get_parameter())
 
     def update_policy_function_theano(self, phi, phi_new, all_actions, all_rewards):
         delta_policy = self.delta_policy(phi, phi_new, all_rewards, all_actions)
-        print(np.mean(self.td_error_function(phi, phi_new, all_rewards)))
+        # e = self.error(phi, phi_new, all_rewards, all_actions)
+        # print(np.dot(np.transpose(e), e).flatten())
+        logger.debug("TD Error: %f", np.mean(self.td_error_function(phi, phi_new, all_rewards)))
         self.policy.update_parameters_theano(delta_policy, phi)
         self.theta.set_value(self.policy.get_policy_parameters())
 
